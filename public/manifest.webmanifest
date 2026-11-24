@@ -1,0 +1,109 @@
+{
+  "id": "/",
+  "name": "ИИSMM — Умный Автопостинг и Нейросети",
+  "short_name": "ИИSMM",
+  "description": "Интеллектуальный SMM-комбайн: автопостинг, нейрогенератор постов, кросспостинг и аналитика для Telegram, VK, OK, Дзен и других соцсетей.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "lang": "ru",
+  "dir": "ltr",
+  "theme_color": "#fce7f3",
+  "background_color": "#e0f2fe",
+  "prefer_related_applications": false,
+  "categories": ["business", "productivity", "social"],
+  "icons": [
+    {
+      "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoECAIjNygaPS4aNz4aQAtiERQFIRRKCx8LZDogPS0sKy8ZEXcYQA0xBAQ4FTZLIDcYDSgCVCxpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png",
+      "sizes": "48x48",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoETg4gKi4mMwcKKX8RBR8NJAwLYDEYJz9oPRpUFS0sKxcwL3cYUj4zexQiTAgfNGYNJXYNAgJpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoECDwjNygaMiI4Gxw9Bw9_ExJQATsBdggaMF87AAssKy8zEXcYQA0xBAQ-SQYULgU_C3Y7NyxpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png",
+      "sizes": "120x120",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoETgIgKi4mMFkOPxBUaRJkAAJdFSJNLE0pC1A2FwssKxcgL3cYUj4zexQjNh8JFSRbBz02BBJpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoECDQjNygaMAJdPToURRhxBCgDBTsqLB8zZCcjMi0sKy9kEXcYQA0xBAQ-Ny0bbAQ6HjMKWBJpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoETjwgKi4mNioCFWUSXzxsdiVkMjIXIykaHzoxKC0sKxdlL3cYUj4zexQhOCEyHgAJCQIvHSxpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoETjAgKi4mNwMuCBs1eA9YfwxiaQEWciw-EFlSPRssKxYeL3cYUj4zexQiCXY1Nxg_ISAILixpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoETjQgKi4mNCkNFzpPZC4HdFgGOhtJIkM3CjcAKz0sKxYwL3cYUj4zexQsEgIXEx8HVAk0HyxpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://file.pro-talk.ru/tgf/GTUpJwQ9JCkYKlJzP2IIL1oQCjoECCgjNygaNlUOKmE3VHQDMglfHnJLCTQQHjANEi0sKzgRBkQeGA0xBAQ-DzA8CCcgHiYoWQ8cEyNBEHQHUlkQCgN1PyQuUFVxaFleb2NaDmN0BylfNj0IdxcuJR4vKW4bWRAdEWUycz4kARczKSgcADw3CzkmQFlpYlAHaQZwVAtoe0E.jpg",
+      "sizes": "1200x675",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "ИИSMM — панель автопостинга и нейросетей"
+    },
+    {
+      "src": "https://file.pro-talk.ru/tgf/GTUpJwQ9JCkYKlJzP2IIL1oQCjoETiwgKi4mKlorDggwRBh-ETV9GQhBFS1oago9cS0sKwArLEQeQj4zexQsNg8DbCIsKx0SWjkcEyNBEHQHUlkQCgN1PyQuUFVxaFleb2NaDmN0BylfNj0IdxcuJR4vKW4bWRAdEWUycz4kARczKSgcADw3CzkmQFlpYlAHaQZwVAtoe0E.jpg",
+      "sizes": "540x960",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Мобильная версия ИИSMM на Android и iOS"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Создать пост",
+      "short_name": "Пост",
+      "url": "/posts",
+      "icons": [{ "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoECDQjNygaMAJdPToURRhxBCgDBTsqLB8zZCcjMi0sKy9kEXcYQA0xBAQ-Ny0bbAQ6HjMKWBJpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Календарь",
+      "short_name": "Календарь",
+      "url": "/calendar",
+      "icons": [{ "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoECDQjNygaMAJdPToURRhxBCgDBTsqLB8zZCcjMi0sKy9kEXcYQA0xBAQ-Ny0bbAQ6HjMKWBJpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Папки и подборки",
+      "short_name": "Папки",
+      "url": "/folders",
+      "icons": [{ "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoECDQjNygaMAJdPToURRhxBCgDBTsqLB8zZCcjMi0sKy9kEXcYQA0xBAQ-Ny0bbAQ6HjMKWBJpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Профиль и пуши",
+      "short_name": "Профиль",
+      "url": "/profile",
+      "icons": [{ "src": "https://file.pro-talk.ru/tgf/GgMpJwQ9JCkYKlJzP2IIL1oQCjoECDQjNygaMAJdPToURRhxBCgDBTsqLB8zZCcjMi0sKy9kEXcYQA0xBAQ-Ny0bbAQ6HjMKWBJpFx5KYQRyUwZnfUh9QmITKSwoPRsZaz8UQS9-KlVEYAI2NikzFBAhdhwVODQ0OlgGWjodH2B7SXdLaGFeUXxjXVA.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

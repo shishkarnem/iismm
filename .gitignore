@@ -1,0 +1,16 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+*.bak
+*.corrupt.*
+*.tmp
+database.json
+*.dump
+local.db
+parsed_users.json
+backups/

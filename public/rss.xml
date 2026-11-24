@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Блог и Новости ИИSMM — Автопостинг и Нейросети</title>
+    <link>https://iismm.ru/blog</link>
+    <atom:link href="https://iismm.ru/rss.xml" rel="self" type="application/rss+xml"/>
+    <description>Официальный блог платформы ИИSMM. Новости нейросетей, SMM-связки, Telegram API и советы по автопостингу.</description>
+    <language>ru-ru</language>
+    <lastBuildDate>Sat, 21 Nov 2026 12:00:00 GMT</lastBuildDate>
+    <image>
+      <url>https://iismm.ru/pwa/icon-192x192.png</url>
+      <title>ИИSMM</title>
+      <link>https://iismm.ru/</link>
+    </image>
+    <item>
+      <title>ИИSMM — Умный автопостинг и генерация контента нейросетями</title>
+      <link>https://iismm.ru/posts</link>
+      <guid isPermaLink="true">https://iismm.ru/posts</guid>
+      <description>Создавайте посты в Telegram, ВКонтакте, Одноклассники и Дзен с помощью нейрогенератора, настраивайте календарь и папки взаимного пиара.</description>
+      <pubDate>Sat, 21 Nov 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Академия ИИSMM — Обучение автопостингу и настройке каналов</title>
+      <link>https://iismm.ru/academy</link>
+      <guid isPermaLink="true">https://iismm.ru/academy</guid>
+      <description>Пошаговые инструкции по подключению Telegram-каналов, настройке Markdown V2 / Rich и сценариям автопилота.</description>
+      <pubDate>Sat, 21 Nov 2026 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
