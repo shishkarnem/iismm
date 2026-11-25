@@ -23,7 +23,7 @@ import { NeurosphereLoader } from '../components/loaders/NeurosphereLoader';
 import { usePricingConfig } from '../hooks/usePricingConfig';
 import { formatIirkyCount } from '../shared/pricingConfig';
 import { CachedMediaImage } from '../components/CachedMediaImage';
-import { SelectionChannelRow } from '../components/selections/SelectionChannelRow';
+import { SelectionCard } from '../components/folders/cards/SelectionCard';
 import { PromoPostPreviewModal } from '../components/folders/PromoPostPreviewModal';
 
 interface FoldersPageProps {
@@ -234,8 +234,46 @@ export default function FoldersPage({
       throw new Error(err.error || 'Ошибка при подтверждении участия');
     }
 
+    setPendingInvitations(prev => ({
+      folders: type === 'folder' ? prev.folders.filter((f: any) => String(f.participant_id) !== String(subId)) : prev.folders,
+      selections: type === 'selection' ? prev.selections.filter((s: any) => String(s.chan_id) !== String(subId)) : prev.selections
+    }));
     setToastSuccess('Участие успешно подтверждено! Канал активен и отображается в календаре.');
     setRefreshTrigger(prev => prev + 1);
+    fetchInvitations();
+  };
+
+  const handleDeclineInvitation = async (type: 'folder' | 'selection', id: string, subId: string) => {
+    const curId = String(currentUser?.id || '').trim();
+    const endpoint = type === 'folder'
+      ? `/api/promo-folders/${id}/decline-invitation`
+      : `/api/promo-selections/${id}/decline-invitation`;
+
+    const body = type === 'folder'
+      ? { userId: curId, participantId: subId }
+      : { userId: curId, chanId: subId };
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': curId
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Ошибка при отклонении приглашения');
+    }
+
+    setPendingInvitations(prev => ({
+      folders: type === 'folder' ? prev.folders.filter((f: any) => String(f.participant_id) !== String(subId)) : prev.folders,
+      selections: type === 'selection' ? prev.selections.filter((s: any) => String(s.chan_id) !== String(subId)) : prev.selections
+    }));
+    setToastSuccess('Приглашение отклонено.');
+    setRefreshTrigger(prev => prev + 1);
+    fetchInvitations();
   };
 
   useEffect(() => {
@@ -288,7 +326,7 @@ export default function FoldersPage({
     } catch (e) {}
   }, [currentPath]);
 
-  // Helper: check if currentUser is organizer or admin
+  // Helper: check if currentUser is organizer of this folder/selection (or system admin)
   const isItemOrganizer = (item: any) => {
     if (!item) return false;
     const curId = String(currentUser?.id || '').trim();
@@ -296,50 +334,36 @@ export default function FoldersPage({
     const itemAuthorId = String(item.author_id || '').trim();
     const itemTgId = String(item.author_telegram_id || '').trim();
 
-    // Direct match with ID or Telegram ID
-    if (curId && itemAuthorId && (curId === itemAuthorId || itemAuthorId.includes(curId) || curId.includes(itemAuthorId))) return true;
-    if (curTgId && (curTgId === itemTgId || curTgId === itemAuthorId || itemTgId.includes(curTgId))) return true;
+    if (curId && itemAuthorId && curId === itemAuthorId) return true;
+    if (curTgId && ((itemTgId && curTgId === itemTgId) || (itemAuthorId && curTgId === itemAuthorId))) return true;
 
-    // Username matching (support both username and telegramUsername)
     const curUname = (currentUser?.telegramUsername || currentUser?.username || '').toLowerCase().replace('@', '').trim();
     const itemUname = (item.author_username || '').toLowerCase().replace('@', '').trim();
-    if (curUname && itemUname && (curUname === itemUname || itemUname.includes(curUname) || curUname.includes(itemUname))) return true;
+    if (curUname && itemUname && curUname === itemUname) return true;
 
-    // Admin / VIP role matching
     const role = (currentUser?.role || '').toLowerCase();
-    const tariff = (currentUser?.tariff || '').toLowerCase();
-    if (role === 'admin' || role === 'superadmin' || Boolean(currentUser?.isAdmin) || tariff.includes('vip') || tariff.includes('космос')) {
+    if (role === 'admin' || role === 'superadmin' || Boolean(currentUser?.isAdmin)) {
       return true;
     }
 
-    // Default seeded IDs and demo environment
-    if (itemAuthorId === '16926299042' || itemAuthorId === '169262990' || itemAuthorId === '1' || itemAuthorId === 'user_1' || itemAuthorId === 'admin') {
-      return true;
-    }
-
-    // In AI Studio workspace, the active user manages their folders and collections
-    return true;
+    return false;
   };
 
-  // Helper: check if channel belongs to currentUser
+  // Helper: check strictly if channel belongs to currentUser
   const isUserChannel = (participantOrChan: any) => {
     if (!participantOrChan) return false;
     const curId = String(currentUser?.id || '').trim();
     const curTgId = String(currentUser?.telegramId || '').trim();
     const chanUserId = String(participantOrChan.user_id || '').trim();
 
-    if (curId && chanUserId && (curId === chanUserId || chanUserId.includes(curId))) return true;
-    if (curTgId && (curTgId === chanUserId || chanUserId.includes(curTgId))) return true;
+    if (curId && chanUserId && curId === chanUserId) return true;
+    if (curTgId && chanUserId && curTgId === chanUserId) return true;
 
-    if (Array.isArray(channels) && channels.some(ch => 
-      String(ch.id) === String(participantOrChan.channel_id) || 
-      (ch.username && participantOrChan.channel_username && ch.username.toLowerCase().replace('@','') === participantOrChan.channel_username.toLowerCase().replace('@',''))
+    const cleanTargetUname = (participantOrChan.channel_username || '').toLowerCase().replace('@', '').trim();
+    if (Array.isArray(channels) && channels.some(ch =>
+      (participantOrChan.channel_id && String(ch.id) === String(participantOrChan.channel_id)) ||
+      (ch.username && cleanTargetUname && String(ch.username).toLowerCase().replace('@', '').trim() === cleanTargetUname)
     )) {
-      return true;
-    }
-
-    // Demo channel owner support
-    if (participantOrChan.user_id === '16926299042' || participantOrChan.user_id === '1' || participantOrChan.channel_id === 'ch-1' || participantOrChan.channel_username === '@shishkarnem') {
       return true;
     }
 
@@ -745,9 +769,53 @@ export default function FoldersPage({
     }
   };
 
+  // Validate custom publication window (0..24h ahead of base scheduled_at)
+  const getCustomTimeValidationError = (
+    inputMskStr: string,
+    baseIso: string | undefined | null,
+    label: string
+  ): string | null => {
+    if (!inputMskStr || !baseIso) return null;
+    const baseMs = new Date(baseIso).getTime();
+    const targetIso = fromMskInputString(inputMskStr);
+    const targetMs = new Date(targetIso).getTime();
+    if (isNaN(baseMs) || isNaN(targetMs)) {
+      return `${label}: укажите корректную дату и время.`;
+    }
+    const diffHours = (targetMs - baseMs) / (3600 * 1000);
+    if (diffHours < -0.01) {
+      return `${label}: выбранное время раньше даты общего сбора (${formatMskDateDisplay(baseIso).fullStr}). Допустим перенос только вперёд (от 0 до +24 часов).`;
+    }
+    if (diffHours > 24.01) {
+      const maxIso = new Date(baseMs + 24 * 3600 * 1000).toISOString();
+      return `${label}: превышен лимит в 24 часа (+${diffHours.toFixed(1)} ч.). Можно сместить максимум до ${formatMskDateDisplay(maxIso).fullStr}.`;
+    }
+    return null;
+  };
+
   // Save Custom Publication Time for Participant (folders & selections)
   const handleSaveCustomTime = async () => {
     if (!selectedTargetItem || !selectedParticipantTarget) return;
+
+    const mainErr = getCustomTimeValidationError(
+      customTimeInput,
+      selectedTargetItem.scheduled_at,
+      'Основной пост'
+    );
+    const repeatErr =
+      selectedTargetItem.repeat_post_enabled === 1 && selectedTargetItem.repeat_scheduled_at
+        ? getCustomTimeValidationError(
+            customRepeatTimeInput,
+            selectedTargetItem.repeat_scheduled_at,
+            'Повторный пост'
+          )
+        : null;
+
+    if (mainErr || repeatErr) {
+      showStatus(mainErr || repeatErr || 'Превышен допустимый интервал в 24 часа', 'error');
+      return;
+    }
+
     try {
       setIsSavingCustomTime(true);
       const isSelection = Boolean(selectedTargetItem.channels || selectedTargetItem.header_title);
@@ -759,6 +827,7 @@ export default function FoldersPage({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          userId: currentUser?.id || currentUser?.telegramId || '',
           customPublishTime: customTimeInput ? fromMskInputString(customTimeInput) : null,
           customRepeatPublishTime: customRepeatTimeInput ? fromMskInputString(customRepeatTimeInput) : null
         })
@@ -890,16 +959,18 @@ export default function FoldersPage({
     }
   };
 
-  // Open Join Selection Modal with auto-avatar from channel
+  // Open Join Selection Modal with auto-avatar & existing/channel description (max 200 chars)
   const handleOpenJoinSelectionModal = (selection: any) => {
     setSelectedTargetItem(selection);
-    const activeChanIds = (selection.channels || []).filter((c: any) => c.status === 'active').map((c: any) => String(c.channel_id));
+    const selChans = Array.isArray(selection.channels) ? selection.channels : [];
+    const activeChanIds = selChans.filter((c: any) => c.status === 'active').map((c: any) => String(c.channel_id));
     const available = channels.filter(c => !activeChanIds.includes(String(c.id)));
     const ch = available[0] || channels[0];
     if (ch) {
+      const existingRec = selChans.find((c: any) => String(c.channel_id) === String(ch.id));
       setSelectedChannelIdForSelection(String(ch.id));
-      setSelChannelAvatarUrl(ch.photoUrl || ch.avatarUrl || '');
-      setSelChannelPromoText(ch.description || ch.bio || '');
+      setSelChannelAvatarUrl(existingRec?.channel_avatar_url || ch.photoUrl || ch.avatarUrl || '');
+      setSelChannelPromoText(String(existingRec?.promo_text || ch.description || ch.bio || '').trim().slice(0, 200));
     } else {
       setSelectedChannelIdForSelection('');
       setSelChannelAvatarUrl('');
@@ -952,7 +1023,9 @@ export default function FoldersPage({
   // ==========================================================================
   const handleOpenJoinFolderModal = (folder: any) => {
     setSelectedTargetItem(folder);
-    const inFolderChannelIds = (folder.participants || []).map((p: any) => String(p.channel_id));
+    const inFolderChannelIds = (folder.participants || [])
+      .filter((p: any) => p.status !== 'left' && p.status !== 'invited' && p.status !== 'declined')
+      .map((p: any) => String(p.channel_id));
     const available = channels.filter(c => !inFolderChannelIds.includes(String(c.id)));
     // Pre-select first eligible channel or first available channel
     const firstEligible = available.find(c => (c.subscribers || c.subscribersCount || 0) >= Number(folder.min_subscribers || 0));
@@ -1060,6 +1133,7 @@ export default function FoldersPage({
         setIsJoinFolderModalOpen(false);
         setIsChannelDropdownOpen(false);
         setRefreshTrigger(prev => prev + 1);
+        fetchInvitations();
       } else {
         showStatus(data.error || 'Ошибка при вступлении в папку', 'error');
       }
@@ -1231,16 +1305,24 @@ export default function FoldersPage({
 
   // Submit Join Selection (1 ИИрка участие + 1 ИИрка модерация 763)
   const handleJoinSelection = async () => {
+    if (!selectedTargetItem) return;
     if (!selectedChannelIdForSelection) {
       showStatus('Выберите канал для участия в подборке', 'error');
       return;
     }
-    if (!selChannelPromoText.trim()) {
+    const cleanPromoText = selChannelPromoText.trim().slice(0, 200);
+    if (!cleanPromoText) {
       showStatus('Заполните описание канала (до 200 символов)', 'error');
       return;
     }
     const ch = channels.find(c => String(c.id) === String(selectedChannelIdForSelection));
     if (!ch) return;
+
+    const effectiveUserId = String(currentUser?.id || currentUser?.telegramId || '').trim();
+    if (!effectiveUserId) {
+      showStatus('Не удалось определить пользователя. Перезайдите в аккаунт.', 'error');
+      return;
+    }
 
     try {
       setIsSubmittingJoinSelection(true);
@@ -1248,13 +1330,13 @@ export default function FoldersPage({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: currentUser?.id,
+          userId: effectiveUserId,
           channelId: ch.id,
-          channelName: ch.name || ch.title,
-          channelUsername: ch.username || ch.telegramUsername,
+          channelName: ch.name || ch.title || ch.username || 'Канал',
+          channelUsername: ch.username || ch.telegramUsername || '',
           channelAvatarUrl: selChannelAvatarUrl,
-          promoText: selChannelPromoText.trim(),
-          subscribersCount: ch.subscribers || 0
+          promoText: cleanPromoText,
+          subscribersCount: ch.subscribers || ch.subscribersCount || 0
         })
       });
       const data = await res.json();
@@ -1262,6 +1344,7 @@ export default function FoldersPage({
         showStatus('Канал успешно прошел модерацию функцией 763 и добавлен в подборку!');
         setIsJoinSelectionModalOpen(false);
         setRefreshTrigger(prev => prev + 1);
+        fetchInvitations();
         onRefreshUser?.();
       } else {
         showStatus(data.error || 'Ошибка при вступлении в подборку', 'error');
@@ -1486,6 +1569,7 @@ export default function FoldersPage({
         <InviteConfirmationBanner
           invitations={pendingInvitations}
           onConfirm={handleConfirmInvitation}
+          onDecline={handleDeclineInvitation}
           isLoading={isLoading}
         />
 
@@ -1907,9 +1991,11 @@ export default function FoldersPage({
                                         ? 'bg-sky-50 text-sky-800 border border-sky-200' 
                                         : p.status === 'declined' 
                                         ? 'bg-rose-50 text-rose-700 border border-rose-200' 
+                                        : p.status === 'invited'
+                                        ? 'bg-amber-50 text-amber-800 border border-amber-200'
                                         : 'bg-orange-50 text-orange-800 border border-orange-200'
                                     }`}>
-                                      {p.status === 'accepted' ? 'Одобрен (автоматически)' : p.status === 'declined' ? 'Отклонен' : 'На проверке'}
+                                      {p.status === 'accepted' ? 'Одобрен (автоматически)' : p.status === 'declined' ? 'Отклонен' : p.status === 'invited' ? 'Приглашён' : 'На проверке'}
                                     </span>
 
                                     {/* Отправка: Будет отправлена / Успешно / Ошибка */}
@@ -1929,8 +2015,8 @@ export default function FoldersPage({
                                       </span>
                                     )}
 
-                                    {/* Кнопка смены времени участником (до 24ч вперед) */}
-                                    {(String(p.user_id) === String(currentUser?.id) || isAuthor) && p.post_published !== 1 && (
+                                    {/* Кнопка смены времени участником или организатором (до 24ч вперед) */}
+                                    {(isUserChannel(p) || isAuthor) && p.post_published !== 1 && (
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -2169,235 +2255,37 @@ export default function FoldersPage({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 w-full">
-              {filteredSelections.map((selection) => {
-                const isAuthor = isItemOrganizer(selection);
-                const activeChannels = selection.channels?.filter((c: any) => c.status === 'active') || [];
-                const pubDate = new Date(selection.scheduled_at).toLocaleString('ru-RU', {
-                  day: 'numeric',
-                  month: 'short',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                });
-
-                return (
-                  <div
-                    key={selection.id}
-                    className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-sky-50/80 via-pink-50/80 via-orange-50/80 via-pink-50/80 to-sky-50/80 backdrop-blur-md border border-pink-200/80 shadow-xs flex flex-col justify-between space-y-3.5"
-                  >
-                    <div className="space-y-3">
-                      {/* ========================================================= */}
-                      {/* БЛОК 1: Название подборки */}
-                      {/* ========================================================= */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-pink-100 pb-2">
-                        <div className="min-w-0 flex-1">
-                          <h3 className="text-base sm:text-lg font-black text-slate-900 leading-snug truncate" title={selection.header_title || selection.title}>
-                            {selection.header_title || selection.title}
-                          </h3>
-                          {selection.header_subtitle && (
-                            <p className="text-[14px] text-slate-600 mt-0.5 line-clamp-1">
-                              {selection.header_subtitle}
-                            </p>
-                          )}
-                          <p className="text-[14px] text-slate-500 mt-0.5">
-                            Подборка: <span className="text-slate-800 font-bold">{selection.title}</span> • Организатор: {selection.author_name}
-                          </p>
-                        </div>
-
-                        <span className={`px-2.5 py-0.5 rounded-xl text-[14px] font-bold shrink-0 ${
-                          selection.status === 'published'
-                            ? 'bg-sky-100 text-sky-800 border border-sky-300'
-                            : selection.status === 'confirmed'
-                            ? 'bg-sky-50 text-sky-700 border border-sky-200'
-                            : 'bg-white/90 text-pink-700 border border-pink-300'
-                        }`}>
-                          {selection.status === 'published' ? 'Опубликовано' : selection.status === 'confirmed' ? 'Подтверждена' : 'Идет сбор'}
-                        </span>
-                      </div>
-
-                      {/* ========================================================= */}
-                      {/* БЛОК 2: Теги */}
-                      {/* ========================================================= */}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {selection.categories?.map((cat: string) => (
-                          <span key={cat} className="px-2.5 py-0.5 rounded-xl bg-white/90 border border-pink-200 text-[14px] font-bold text-slate-700">
-                            {cat}
-                          </span>
-                        ))}
-                        {isAuthor && (
-                          <span className="px-2.5 py-0.5 rounded-xl bg-amber-100 border border-amber-300 text-amber-900 text-[14px] font-black flex items-center gap-1 shadow-2xs">
-                            👑 Организатор
-                          </span>
-                        )}
-                        <span className="text-[14px] text-slate-500 ml-auto hidden sm:inline">
-                          Публикация: <strong className="text-slate-700">{pubDate}</strong>
-                        </span>
-                      </div>
-
-                      {/* ========================================================= */}
-                      {/* БЛОК 3: Кнопка Редактировать (для организатора) и кнопка Просмотр (для всех). Иконка поделиться и кнопка TMA инвайт */}
-                      {/* ========================================================= */}
-                      <div className="p-2.5 rounded-2xl bg-white/80 border border-pink-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* Кнопки Редактировать и Удалить (для организатора) */}
-                          {isAuthor && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditSelection(selection)}
-                                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white text-[14px] font-bold flex items-center gap-1.5 shadow-2xs hover:opacity-95 transition-all cursor-pointer"
-                                title="Редактировать параметры подборки"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                                <span>Редактировать</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setDeletePromoTarget({
-                                    id: selection.id,
-                                    type: 'selection',
-                                    title: selection.header_title || selection.title,
-                                    participantsCount: activeChannels.length
-                                  })
-                                }
-                                className="p-2 rounded-xl bg-white border border-rose-300 text-rose-600 hover:bg-rose-50 text-[14px] font-bold flex items-center justify-center shadow-2xs transition-all cursor-pointer"
-                                title="Удалить подборку организатором"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-
-                          {/* Кнопка Просмотр (для всех) */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewSelection(selection);
-                              setIsPreviewSelectionModalOpen(true);
-                            }}
-                            className="px-3.5 py-1.5 rounded-xl bg-white border border-sky-300 text-sky-800 hover:bg-sky-50 text-[14px] font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                            title="Предпросмотр Rich-поста подборки"
-                          >
-                            <Eye className="w-4 h-4 text-sky-600" />
-                            <span>Просмотр</span>
-                          </button>
-                        </div>
-
-                        {/* Иконка поделиться и кнопка TMA инвайт */}
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(getInviteUrl('selection', selection), 'Реферальная ссылка скопирована')}
-                            className="p-1.5 rounded-xl bg-white border border-pink-200 text-slate-700 hover:bg-pink-50 text-[14px] font-bold transition-all cursor-pointer shadow-2xs"
-                            title="Скопировать ссылку на сайт"
-                          >
-                            <Share2 className="w-4 h-4 text-sky-600" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(getTmaInviteUrl('selection', selection), 'TMA инвайт скопирован')}
-                            className="px-3 py-1.5 rounded-xl bg-white border border-pink-200 text-slate-700 hover:bg-pink-50 text-[14px] font-bold transition-all cursor-pointer shadow-2xs"
-                            title="Скопировать инвайт для Telegram бота"
-                          >
-                            <span>TMA инвайт</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* ========================================================= */}
-                      {/* БЛОК 4: Список каналов - выпадающий список участников. Внутри списка одобрение автоматически через ИИ */}
-                      {/* Для участника и организатора напротив каждого канала в списке каналов кнопка редактировать - при нажатии модальное окно для редактирования */}
-                      {/* ========================================================= */}
-                      <div className="rounded-2xl border border-pink-200/80 bg-white/75 overflow-hidden shadow-2xs">
-                        <button
-                          type="button"
-                          onClick={() => toggleSelectionChannels(selection.id)}
-                          className="w-full p-2.5 sm:p-3 flex items-center justify-between text-[14px] font-bold text-slate-800 hover:bg-pink-50/50 cursor-pointer"
-                        >
-                          <span className="flex flex-wrap items-center gap-1.5 min-w-0">
-                            <Users className="w-4 h-4 text-pink-500 shrink-0" />
-                            <span>Каналы ({activeChannels.length} из {selection.max_participants})</span>
-                            <span
-                              className="px-2 py-0.5 rounded-lg bg-sky-100/90 text-sky-800 border border-sky-200 text-[14px] font-semibold"
-                              title="Одобрение автоматически через ИИ"
-                            >
-                              Авто-ИИ ✓
-                            </span>
-                          </span>
-                          <ChevronDown className={`w-4 h-4 text-slate-500 shrink-0 transition-transform ${expandedSelectionChannels[selection.id] ? 'rotate-180' : ''}`} />
-                        </button>
-
-                        {expandedSelectionChannels[selection.id] && (
-                          <div className="p-2.5 border-t border-pink-100 space-y-2 bg-pink-50/20">
-                            {activeChannels.length === 0 ? (
-                              <p className="text-[14px] text-slate-500 p-2 text-center">В подборке пока нет каналов-участников.</p>
-                            ) : (
-                              activeChannels.map((c: any) => {
-                                const isMyChan = isUserChannel(c);
-                                const canEdit = isMyChan || isAuthor;
-                                return (
-                                  <SelectionChannelRow
-                                    key={c.id}
-                                    channel={c}
-                                    selectionScheduledAt={selection.scheduled_at}
-                                    isMyChannel={isMyChan}
-                                    canEdit={canEdit}
-                                    onOpenDetail={() => setChannelDetailModal({ selection, channel: c })}
-                                    onOpenCustomTime={() => {
-                                      setSelectedTargetItem(selection);
-                                      setSelectedParticipantTarget(c);
-                                      setCustomTimeInput(c.custom_publish_time ? toMskInputString(c.custom_publish_time) : '');
-                                      setCustomRepeatTimeInput('');
-                                      setIsCustomTimeModalOpen(true);
-                                    }}
-                                    onOpenEdit={() => handleOpenEditChannel(c, selection)}
-                                    onOpenDelete={() => handleOpenLeaveSelectionModal(selection, c)}
-                                  />
-                                );
-                              })
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* ========================================================= */}
-                      {/* БЛОК 5: Кнопка Добавить канал и кнопка удалить канал */}
-                      {/* ========================================================= */}
-                      <div className="p-3 rounded-2xl bg-white/85 border border-pink-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenJoinSelectionModal(selection)}
-                            className="px-4 py-2 rounded-2xl text-[14px] font-bold bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white shadow-xs hover:opacity-95 transition-all cursor-pointer flex items-center gap-1.5"
-                            title="Добавить канал в подборку с выбором канала, аватаром и описанием"
-                          >
-                            <PlusCircle className="w-4 h-4" />
-                            <span>Добавить канал</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleOpenLeaveSelectionModal(selection)}
-                            className="px-3.5 py-2 rounded-2xl bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 text-[14px] font-bold cursor-pointer transition-all shadow-2xs flex items-center gap-1.5"
-                            title="Удалить канал из подборки и базы данных"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span>Удалить канал</span>
-                          </button>
-                        </div>
-
-                        {selection.userJoined && (
-                          <span className="px-3 py-1.5 rounded-xl bg-sky-100 text-sky-900 text-[14px] font-bold flex items-center gap-1">
-                            <Check className="w-4 h-4 text-sky-600" />
-                            <span>Вы участвуете</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {filteredSelections.map((selection) => (
+                <SelectionCard
+                  key={selection.id}
+                  selection={selection}
+                  isAuthor={isItemOrganizer(selection)}
+                  isChannelsExpanded={Boolean(expandedSelectionChannels[selection.id])}
+                  isUserChannel={isUserChannel}
+                  toMskInputString={toMskInputString}
+                  getInviteUrl={getInviteUrl}
+                  getTmaInviteUrl={getTmaInviteUrl}
+                  onCopyToClipboard={copyToClipboard}
+                  onToggleChannels={toggleSelectionChannels}
+                  onOpenEditSelection={handleOpenEditSelection}
+                  onOpenDeleteSelection={setDeletePromoTarget}
+                  onOpenPreviewSelection={(sel) => {
+                    setPreviewSelection(sel);
+                    setIsPreviewSelectionModalOpen(true);
+                  }}
+                  onOpenJoinSelection={handleOpenJoinSelectionModal}
+                  onOpenLeaveSelection={handleOpenLeaveSelectionModal}
+                  onOpenChannelDetail={(sel, ch) => setChannelDetailModal({ selection: sel, channel: ch })}
+                  onOpenCustomTime={(sel, ch) => {
+                    setSelectedTargetItem(sel);
+                    setSelectedParticipantTarget(ch);
+                    setCustomTimeInput(ch.custom_publish_time ? toMskInputString(ch.custom_publish_time) : '');
+                    setCustomRepeatTimeInput('');
+                    setIsCustomTimeModalOpen(true);
+                  }}
+                  onOpenEditChannel={handleOpenEditChannel}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -2601,7 +2489,11 @@ export default function FoldersPage({
                               const subs = ch.subscribers || ch.subscribersCount || 0;
                               const meetsThreshold = subs >= Number(selectedTargetItem.min_subscribers || 0);
                               const alreadyInFolder = (selectedTargetItem.participants || []).some(
-                                (p: any) => String(p.channel_id) === String(ch.id)
+                                (p: any) =>
+                                  String(p.channel_id) === String(ch.id) &&
+                                  p.status !== 'left' &&
+                                  p.status !== 'invited' &&
+                                  p.status !== 'declined'
                               );
 
                               return (
@@ -2835,25 +2727,25 @@ export default function FoldersPage({
       {/* MODAL 4: JOIN SELECTION (С модерацией 763) */}
       {/* ==================================================================== */}
       {isJoinSelectionModalOpen && selectedTargetItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-sky-950/20 backdrop-blur-md overflow-y-auto">
-          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-sky-50/95 via-pink-50/95 via-orange-50/95 via-pink-50/95 to-sky-50/95 backdrop-blur-md border border-pink-300 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-sky-100/55 backdrop-blur-md overflow-y-auto">
+          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-sky-100/95 via-pink-100/95 via-orange-100/95 via-pink-100/95 to-sky-100/95 backdrop-blur-md border border-pink-300 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-pink-200">
               <h2 className="text-base font-black bg-gradient-to-r from-sky-600 via-pink-600 via-orange-600 to-sky-600 bg-clip-text text-transparent">
-                Участие в подборке «{selectedTargetItem.header_title}»
+                Участие в подборке «{selectedTargetItem.header_title || selectedTargetItem.title}»
               </h2>
-              <button onClick={() => setIsJoinSelectionModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-800 cursor-pointer">
+              <button onClick={() => setIsJoinSelectionModalOpen(false)} className="p-1.5 text-slate-600 hover:text-slate-900 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-sm">
-              <div className="p-3 rounded-2xl bg-sky-50/80 border border-sky-200/80 text-sm text-sky-900 leading-relaxed">
+            <div className="space-y-4 text-[14px]">
+              <div className="p-3 rounded-2xl bg-white/80 border border-sky-200/80 text-[14px] text-slate-800 leading-relaxed">
                 Стоимость участия: <strong>{formatIirkyCount(pf.selectionJoin)} за участие + {formatIirkyCount(pf.selectionModeration)} за нейромодерацию (Функция 763)</strong>. Ссылки и спам-фильтр отключены, проверяется отсутствие ненормативной лексики, законы РФ и соответствие категории.
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-extrabold text-slate-800">
+                  <label className="block text-[14px] font-extrabold text-slate-800">
                     Выберите канал для подборки:
                   </label>
                   <button
@@ -2862,7 +2754,7 @@ export default function FoldersPage({
                       setIsJoinSelectionModalOpen(false);
                       onNavigate('/channels');
                     }}
-                    className="text-sm font-bold text-pink-600 hover:text-pink-800 flex items-center gap-1 cursor-pointer"
+                    className="text-[14px] font-bold text-pink-600 hover:text-pink-800 flex items-center gap-1 cursor-pointer"
                   >
                     <PlusCircle className="w-4 h-4" />
                     <span>Подключить канал</span>
@@ -2871,7 +2763,7 @@ export default function FoldersPage({
 
                 {channels.length === 0 ? (
                   <div className="p-5 rounded-2xl bg-white border border-pink-200 text-center space-y-3">
-                    <p className="text-sm text-slate-700">
+                    <p className="text-[14px] text-slate-700">
                       У вас пока нет подключенных каналов в системе
                     </p>
                     <button
@@ -2880,7 +2772,7 @@ export default function FoldersPage({
                         setIsJoinSelectionModalOpen(false);
                         onNavigate('/channels');
                       }}
-                      className="px-5 py-2.5 rounded-2xl text-sm font-bold bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white shadow-xs cursor-pointer inline-flex items-center gap-2"
+                      className="px-5 py-2.5 rounded-2xl text-[14px] font-bold bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white shadow-xs cursor-pointer inline-flex items-center gap-2"
                     >
                       <PlusCircle className="w-4 h-4" />
                       <span>Перейти к подключению каналов</span>
@@ -2892,11 +2784,18 @@ export default function FoldersPage({
                       const isSelected = String(selectedChannelIdForSelection) === String(ch.id);
                       const subs = ch.subscribers || ch.subscribersCount || 0;
                       const meetsThreshold = subs >= Number(selectedTargetItem.min_subscribers || 0);
+                      const existingRec = (selectedTargetItem.channels || []).find((c: any) => String(c.channel_id) === String(ch.id));
+                      const isAlreadyActive = existingRec?.status === 'active';
+                      const isInvitedReanimate = existingRec?.status === 'invited';
 
                       return (
                         <div
                           key={ch.id}
-                          onClick={() => setSelectedChannelIdForSelection(String(ch.id))}
+                          onClick={() => {
+                            setSelectedChannelIdForSelection(String(ch.id));
+                            setSelChannelAvatarUrl(existingRec?.channel_avatar_url || ch.photoUrl || ch.avatarUrl || '');
+                            setSelChannelPromoText(String(existingRec?.promo_text || ch.description || ch.bio || '').trim().slice(0, 200));
+                          }}
                           className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${
                             isSelected
                               ? 'bg-white border-pink-500 shadow-sm ring-1 ring-pink-400'
@@ -2907,21 +2806,31 @@ export default function FoldersPage({
                             {ch.photoUrl || ch.avatarUrl ? (
                               <CachedMediaImage src={ch.photoUrl || ch.avatarUrl} alt={ch.name || 'Канал'} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-pink-200" />
                             ) : (
-                              <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center font-bold text-sm shrink-0">
+                              <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center font-bold text-[14px] shrink-0">
                                 {ch.name?.slice(0, 2)}
                               </div>
                             )}
-                            <div className="truncate">
-                              <span className="font-bold text-sm text-slate-900 block truncate">{ch.name || ch.title}</span>
-                              <span className="text-sm text-slate-500">
+                            <div className="min-w-0">
+                              <span className="font-bold text-[14px] text-slate-900 block truncate">{ch.name || ch.title}</span>
+                              <span className="text-[14px] text-slate-600 block truncate">
                                 {ch.username || ch.telegramUsername || ''} • {subs} подписчиков
                               </span>
                             </div>
                           </div>
 
-                          <div className="shrink-0 flex items-center gap-2">
+                          <div className="shrink-0 flex items-center gap-1.5 flex-wrap justify-end">
+                            {isAlreadyActive && (
+                              <span className="text-[14px] text-sky-900 font-bold px-2 py-0.5 rounded-lg bg-sky-100 border border-sky-200">
+                                В подборке
+                              </span>
+                            )}
+                            {isInvitedReanimate && (
+                              <span className="text-[14px] text-amber-900 font-bold px-2 py-0.5 rounded-lg bg-amber-100 border border-amber-300">
+                                Приглашён
+                              </span>
+                            )}
                             {!meetsThreshold && (
-                              <span className="text-sm text-orange-700 font-bold px-2 py-0.5 rounded bg-orange-100">
+                              <span className="text-[14px] text-orange-800 font-bold px-2 py-0.5 rounded-lg bg-orange-100">
                                 Ниже порога
                               </span>
                             )}
@@ -3760,160 +3669,206 @@ export default function FoldersPage({
       {/* ==================================================================== */}
       {/* MODAL 15: INDIVIDUAL PUBLICATION TIME ADJUSTMENT */}
       {/* ==================================================================== */}
-      {isCustomTimeModalOpen && selectedTargetItem && selectedParticipantTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-sky-950/20 backdrop-blur-md overflow-y-auto">
-          <div className="w-full max-w-lg p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-sky-50/95 via-pink-50/95 via-orange-50/95 via-pink-50/95 to-sky-50/95 backdrop-blur-md border border-pink-300 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-pink-200">
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 rounded-xl bg-sky-100 text-sky-700">
-                  <Clock className="w-5 h-5" />
-                </span>
-                <h2 className="text-lg font-black bg-gradient-to-r from-sky-600 via-pink-600 via-orange-600 to-sky-600 bg-clip-text text-transparent">
-                  Индивидуальное время публикации
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCustomTimeModalOpen(false)}
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {isCustomTimeModalOpen && selectedTargetItem && selectedParticipantTarget && (() => {
+        const isSelectionTarget = Boolean(selectedTargetItem.channels || selectedTargetItem.header_title);
+        const mainTimeError = getCustomTimeValidationError(
+          customTimeInput,
+          selectedTargetItem.scheduled_at,
+          'Основной пост'
+        );
+        const repeatTimeError =
+          !isSelectionTarget &&
+          selectedTargetItem.repeat_post_enabled === 1 &&
+          selectedTargetItem.repeat_scheduled_at
+            ? getCustomTimeValidationError(
+                customRepeatTimeInput,
+                selectedTargetItem.repeat_scheduled_at,
+                'Повторный пост'
+              )
+            : null;
+        const hasTimeValidationError = Boolean(mainTimeError || repeatTimeError);
 
-            <div className="space-y-3.5 text-[14px]">
-              <div className="p-3.5 rounded-2xl bg-white/85 border border-pink-200 space-y-1.5 shadow-2xs">
-                <div className="text-slate-700">
-                  Папка: <strong className="text-slate-900">{selectedTargetItem.title}</strong>
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-sky-100/55 backdrop-blur-md overflow-y-auto">
+            <div className="w-full max-w-lg p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-sky-100/95 via-pink-100/95 via-orange-100/95 via-pink-100/95 to-sky-100/95 backdrop-blur-md border border-pink-300 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-pink-200">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="p-1.5 rounded-xl bg-sky-100 text-sky-700 shrink-0">
+                    <Clock className="w-5 h-5" />
+                  </span>
+                  <h2 className="text-lg font-black bg-gradient-to-r from-sky-600 via-pink-600 via-orange-600 to-sky-600 bg-clip-text text-transparent">
+                    Индивидуальное время публикации
+                  </h2>
                 </div>
-                <div className="text-slate-700">
-                  Ваш канал: <strong className="text-slate-900">{selectedParticipantTarget.channel_name}</strong>
-                </div>
-                <div className="text-slate-600 text-[14px]">
-                  Общее время сбора папки: <strong className="text-slate-800">{new Date(selectedTargetItem.scheduled_at).toLocaleString('ru-RU')} ({selectedTargetItem.timezone || 'МСК'})</strong>
-                </div>
-                <p className="text-[14px] text-slate-500 pt-1 leading-relaxed">
-                  Вы можете сместить дату и время выхода поста на вашем канале на удобное вам время, но не более чем на 24 часа вперёд от даты общего сбора.
-                </p>
-              </div>
-
-              {/* Main Post Custom Time Input */}
-              <div className="p-4 rounded-2xl bg-white/85 border border-pink-200 space-y-2.5 shadow-2xs">
-                <label className="font-bold text-slate-800 block text-[14px]">
-                  Время выхода первого поста на вашем канале:
-                </label>
-                <input
-                  type="datetime-local"
-                  value={customTimeInput}
-                  onChange={(e) => setCustomTimeInput(e.target.value)}
-                  className="w-full bg-white border border-pink-200 rounded-xl px-3.5 py-2.5 text-[14px] text-slate-900 font-medium focus:outline-none focus:border-pink-400 shadow-2xs"
-                />
-
-                {/* Helper quick buttons */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const base = new Date(selectedTargetItem.scheduled_at);
-                      base.setHours(base.getHours() + 2);
-                      setCustomTimeInput(toMskInputString(base));
-                    }}
-                    className="px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[14px] font-bold border border-sky-200 cursor-pointer"
-                  >
-                    +2 часа
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const base = new Date(selectedTargetItem.scheduled_at);
-                      base.setHours(base.getHours() + 6);
-                      setCustomTimeInput(toMskInputString(base));
-                    }}
-                    className="px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[14px] font-bold border border-sky-200 cursor-pointer"
-                  >
-                    +6 часов
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const base = new Date(selectedTargetItem.scheduled_at);
-                      base.setHours(base.getHours() + 12);
-                      setCustomTimeInput(toMskInputString(base));
-                    }}
-                    className="px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[14px] font-bold border border-sky-200 cursor-pointer"
-                  >
-                    +12 часов
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const base = new Date(selectedTargetItem.scheduled_at);
-                      base.setHours(base.getHours() + 24);
-                      setCustomTimeInput(toMskInputString(base));
-                    }}
-                    className="px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[14px] font-bold border border-sky-200 cursor-pointer"
-                  >
-                    +24 часа (макс)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCustomTimeInput('')}
-                    className="px-2.5 py-1 rounded-xl bg-white hover:bg-pink-50 text-slate-600 text-[14px] font-bold border border-pink-200 cursor-pointer"
-                  >
-                    Сбросить
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomTimeModalOpen(false)}
+                  className="p-1.5 rounded-full text-slate-600 hover:text-slate-900 cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              {/* Repeat Post Custom Time Input (if repeat enabled) */}
-              {selectedTargetItem.repeat_post_enabled === 1 && (
+              <div className="space-y-3.5 text-[14px]">
+                <div className="p-3.5 rounded-2xl bg-white/85 border border-pink-200 space-y-1.5 shadow-2xs">
+                  <div className="text-slate-700 break-words">
+                    {isSelectionTarget ? 'Подборка:' : 'Папка:'}{' '}
+                    <strong className="text-slate-900">
+                      {selectedTargetItem.header_title || selectedTargetItem.title}
+                    </strong>
+                  </div>
+                  <div className="text-slate-700 break-words">
+                    Канал: <strong className="text-slate-900">{selectedParticipantTarget.channel_name}</strong>
+                  </div>
+                  <div className="text-slate-700 text-[14px]">
+                    Общее время публикации:{' '}
+                    <strong className="text-slate-900">
+                      {formatMskDateDisplay(selectedTargetItem.scheduled_at).fullStr}
+                    </strong>
+                  </div>
+                  <p className="text-[14px] text-slate-600 pt-1 leading-relaxed">
+                    Вы можете сместить дату и время выхода поста на канале в течение суток, но не более чем на 24 часа вперёд от даты общего сбора.
+                  </p>
+                </div>
+
+                {/* Main Post Custom Time Input */}
                 <div className="p-4 rounded-2xl bg-white/85 border border-pink-200 space-y-2.5 shadow-2xs">
                   <label className="font-bold text-slate-800 block text-[14px]">
-                    Время выхода повторного поста:
+                    Время выхода поста на канале (МСК):
                   </label>
-                  <div className="text-[14px] text-slate-500">
-                    Общее время повторного поста: {selectedTargetItem.repeat_scheduled_at ? new Date(selectedTargetItem.repeat_scheduled_at).toLocaleString('ru-RU') : 'не задано'}
-                  </div>
                   <input
                     type="datetime-local"
-                    value={customRepeatTimeInput}
-                    onChange={(e) => setCustomRepeatTimeInput(e.target.value)}
-                    className="w-full bg-white border border-pink-200 rounded-xl px-3.5 py-2.5 text-[14px] text-slate-900 font-medium focus:outline-none focus:border-pink-400 shadow-2xs"
+                    value={customTimeInput}
+                    onChange={(e) => setCustomTimeInput(e.target.value)}
+                    className={`w-full bg-white border rounded-xl px-3.5 py-2.5 text-[14px] text-slate-900 font-medium focus:outline-none shadow-2xs ${
+                      mainTimeError ? 'border-rose-400 focus:border-rose-500' : 'border-pink-200 focus:border-pink-400'
+                    }`}
                   />
+
+                  {mainTimeError && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-[14px] font-semibold flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <span>{mainTimeError}</span>
+                    </div>
+                  )}
+
+                  {/* Helper quick buttons */}
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     <button
                       type="button"
-                      onClick={() => setCustomRepeatTimeInput('')}
-                      className="px-2.5 py-1 rounded-xl bg-white hover:bg-pink-50 text-slate-600 text-[14px] font-bold border border-pink-200 cursor-pointer"
+                      onClick={() => {
+                        const base = new Date(selectedTargetItem.scheduled_at);
+                        base.setHours(base.getHours() + 2);
+                        setCustomTimeInput(toMskInputString(base));
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[14px] font-bold border border-sky-200 cursor-pointer"
+                    >
+                      +2 часа
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const base = new Date(selectedTargetItem.scheduled_at);
+                        base.setHours(base.getHours() + 6);
+                        setCustomTimeInput(toMskInputString(base));
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[14px] font-bold border border-sky-200 cursor-pointer"
+                    >
+                      +6 часов
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const base = new Date(selectedTargetItem.scheduled_at);
+                        base.setHours(base.getHours() + 12);
+                        setCustomTimeInput(toMskInputString(base));
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[14px] font-bold border border-sky-200 cursor-pointer"
+                    >
+                      +12 часов
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const base = new Date(selectedTargetItem.scheduled_at);
+                        base.setHours(base.getHours() + 24);
+                        setCustomTimeInput(toMskInputString(base));
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-[14px] font-bold border border-sky-200 cursor-pointer"
+                    >
+                      +24 часа (макс)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomTimeInput('')}
+                      className="px-2.5 py-1 rounded-xl bg-white hover:bg-pink-50 text-slate-700 text-[14px] font-bold border border-pink-200 cursor-pointer"
                     >
                       Сбросить
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-pink-200">
-              <button
-                type="button"
-                onClick={() => setIsCustomTimeModalOpen(false)}
-                className="px-4 py-2.5 rounded-xl bg-white border border-pink-200 text-slate-700 font-bold hover:bg-pink-50 cursor-pointer text-[14px]"
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveCustomTime}
-                disabled={isSavingCustomTime}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white font-bold text-[14px] shadow-2xs hover:opacity-95 cursor-pointer disabled:opacity-50"
-              >
-                {isSavingCustomTime ? 'Сохранение...' : 'Сохранить персональное время'}
-              </button>
+                {/* Repeat Post Custom Time Input (if repeat enabled for folders) */}
+                {!isSelectionTarget && selectedTargetItem.repeat_post_enabled === 1 && (
+                  <div className="p-4 rounded-2xl bg-white/85 border border-pink-200 space-y-2.5 shadow-2xs">
+                    <label className="font-bold text-slate-800 block text-[14px]">
+                      Время выхода повторного поста (МСК):
+                    </label>
+                    <div className="text-[14px] text-slate-600">
+                      Общее время повторного поста:{' '}
+                      {selectedTargetItem.repeat_scheduled_at
+                        ? formatMskDateDisplay(selectedTargetItem.repeat_scheduled_at).fullStr
+                        : 'не задано'}
+                    </div>
+                    <input
+                      type="datetime-local"
+                      value={customRepeatTimeInput}
+                      onChange={(e) => setCustomRepeatTimeInput(e.target.value)}
+                      className={`w-full bg-white border rounded-xl px-3.5 py-2.5 text-[14px] text-slate-900 font-medium focus:outline-none shadow-2xs ${
+                        repeatTimeError ? 'border-rose-400 focus:border-rose-500' : 'border-pink-200 focus:border-pink-400'
+                      }`}
+                    />
+                    {repeatTimeError && (
+                      <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-[14px] font-semibold flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <span>{repeatTimeError}</span>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setCustomRepeatTimeInput('')}
+                        className="px-2.5 py-1 rounded-xl bg-white hover:bg-pink-50 text-slate-700 text-[14px] font-bold border border-pink-200 cursor-pointer"
+                      >
+                        Сбросить
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-pink-200">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomTimeModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-white border border-pink-200 text-slate-700 font-bold hover:bg-pink-50 cursor-pointer text-[14px]"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCustomTime}
+                  disabled={isSavingCustomTime || hasTimeValidationError}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white font-bold text-[14px] shadow-2xs hover:opacity-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSavingCustomTime ? 'Сохранение...' : 'Сохранить персональное время'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ==================================================================== */}
       {/* MODAL 16: SPONSOR MANAGEMENT */}

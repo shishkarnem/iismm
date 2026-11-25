@@ -756,12 +756,30 @@ promoRouter.post('/promo-folders/:id/join', async (req: Request, res: Response) 
       if (dStmt.step()) {
         const existing: any = dStmt.getAsObject();
         dStmt.free();
-        if (existing.status !== 'left') {
-          // Already in folder, continue to next
+        if (existing.status !== 'left' && existing.status !== 'invited' && existing.status !== 'declined') {
+          // Already active/pending in folder, continue to next
           continue;
         } else {
-          // Re-join previously left
-          db.run(`UPDATE promo_folder_participants SET status = 'pending', joined_at = ? WHERE id = ?`, [new Date().toISOString(), existing.id]);
+          // Re-join or confirm reanimated invitation
+          const botCheck = await verifyBotInChannel(chItem.channelUsername || chItem.channelName);
+          db.run(`
+            UPDATE promo_folder_participants
+            SET user_id = ?, channel_name = ?, channel_username = ?, subscribers_count = ?,
+                avatar_url = ?, joined_at = ?, status = ?, is_paid_entry = ?, bot_verified = ?,
+                post_published = 0, repeat_post_published = 0
+            WHERE id = ?
+          `, [
+            userId,
+            chItem.channelName,
+            chItem.channelUsername || '',
+            subs,
+            chItem.avatarUrl || botCheck.photoUrl || '',
+            new Date().toISOString(),
+            initialStatus,
+            chItem.isPaidEntry ? 1 : 0,
+            botCheck.ok ? 1 : 0,
+            existing.id
+          ]);
           joinedPartId = existing.id;
           isRejoin = true;
           addedParticipantIds.push(existing.id);
@@ -1182,17 +1200,45 @@ promoRouter.post('/promo-folders/:id/participants/:partId/custom-time', async (r
     const part: any = pStmt.getAsObject();
     pStmt.free();
 
+    const actorUserId = String(req.body?.userId || (req.headers['x-user-id'] as string) || '').trim();
+    if (actorUserId) {
+      const isOrganizer = actorUserId === String(folder.author_id || '') || (folder.author_telegram_id && actorUserId === String(folder.author_telegram_id));
+      const isOwner = actorUserId === String(part.user_id || '');
+      let isAdmin = false;
+      if (!isOrganizer && !isOwner) {
+        try {
+          const uStmt = db.prepare("SELECT id, telegram_id, role FROM users WHERE id = ? OR CAST(telegram_id AS TEXT) = ? LIMIT 1");
+          uStmt.bind([actorUserId, actorUserId]);
+          if (uStmt.step()) {
+            const uObj: any = uStmt.getAsObject();
+            const role = String(uObj.role || '').toLowerCase();
+            isAdmin = role === 'admin' || role === 'superadmin';
+            if (uObj.id && (String(uObj.id) === String(folder.author_id || '') || String(uObj.id) === String(part.user_id || ''))) {
+              isAdmin = true;
+            }
+          }
+          uStmt.free();
+        } catch {}
+      }
+      if (!isOrganizer && !isOwner && !isAdmin) {
+        res.status(403).json({ error: 'Изменять время публикации может только организатор или владелец канала' });
+        return;
+      }
+    }
+
     // Check difference <= 24 hours for primary post
     if (customPublishTime) {
       const baseTime = new Date(folder.scheduled_at).getTime();
       const newTime = new Date(customPublishTime).getTime();
       const diffHours = (newTime - baseTime) / (3600 * 1000);
 
-      if (diffHours < 0 || diffHours > 24) {
+      if (isNaN(diffHours) || diffHours < -0.01 || diffHours > 24.01) {
         res.status(400).json({ error: 'Персональное время публикации первого поста можно сместить не более чем на 24 часа вперёд от даты общего сбора' });
         return;
       }
       db.run("UPDATE promo_folder_participants SET custom_publish_time = ? WHERE id = ?", [customPublishTime, partId]);
+    } else if (customPublishTime === null || customPublishTime === '') {
+      db.run("UPDATE promo_folder_participants SET custom_publish_time = NULL WHERE id = ?", [partId]);
     }
 
     // Check difference <= 24 hours for repeat post if provided
@@ -1202,12 +1248,14 @@ promoRouter.post('/promo-folders/:id/participants/:partId/custom-time', async (r
         const newRepeatTime = new Date(customRepeatPublishTime).getTime();
         const diffRepeatHours = (newRepeatTime - baseRepeatTime) / (3600 * 1000);
 
-        if (diffRepeatHours < 0 || diffRepeatHours > 24) {
+        if (isNaN(diffRepeatHours) || diffRepeatHours < -0.01 || diffRepeatHours > 24.01) {
           res.status(400).json({ error: 'Персональное время повторного поста можно сместить не более чем на 24 часа вперёд от даты повторной публикации' });
           return;
         }
       }
       db.run("UPDATE promo_folder_participants SET custom_repeat_publish_time = ? WHERE id = ?", [customRepeatPublishTime, partId]);
+    } else if (customRepeatPublishTime === null || customRepeatPublishTime === '') {
+      db.run("UPDATE promo_folder_participants SET custom_repeat_publish_time = NULL WHERE id = ?", [partId]);
     }
 
     // Send notification to folder author & system admin
@@ -1784,12 +1832,38 @@ promoRouter.post('/promo-selections/:id/channel/:chanId/custom-time', async (req
     const chan: any = cStmt.getAsObject();
     cStmt.free();
 
+    const actorUserId = String(req.body?.userId || (req.headers['x-user-id'] as string) || '').trim();
+    if (actorUserId) {
+      const isOrganizer = actorUserId === String(selection.author_id || '') || (selection.author_telegram_id && actorUserId === String(selection.author_telegram_id));
+      const isOwner = actorUserId === String(chan.user_id || '');
+      let isAdmin = false;
+      if (!isOrganizer && !isOwner) {
+        try {
+          const uStmt = db.prepare("SELECT id, telegram_id, role FROM users WHERE id = ? OR CAST(telegram_id AS TEXT) = ? LIMIT 1");
+          uStmt.bind([actorUserId, actorUserId]);
+          if (uStmt.step()) {
+            const uObj: any = uStmt.getAsObject();
+            const role = String(uObj.role || '').toLowerCase();
+            isAdmin = role === 'admin' || role === 'superadmin';
+            if (uObj.id && (String(uObj.id) === String(selection.author_id || '') || String(uObj.id) === String(chan.user_id || ''))) {
+              isAdmin = true;
+            }
+          }
+          uStmt.free();
+        } catch {}
+      }
+      if (!isOrganizer && !isOwner && !isAdmin) {
+        res.status(403).json({ error: 'Изменять время публикации может только организатор подборки или владелец канала' });
+        return;
+      }
+    }
+
     if (customPublishTime) {
       const baseTime = new Date(selection.scheduled_at).getTime();
       const newTime = new Date(customPublishTime).getTime();
       const diffHours = (newTime - baseTime) / (3600 * 1000);
 
-      if (diffHours < 0 || diffHours > 24) {
+      if (isNaN(diffHours) || diffHours < -0.01 || diffHours > 24.01) {
         res.status(400).json({ error: 'Персональное время публикации можно сместить не более чем на 24 часа вперёд от даты общего сбора' });
         return;
       }
@@ -1839,12 +1913,13 @@ promoRouter.post('/promo-selections/:id/join', async (req: Request, res: Respons
       aiImageGenerated = false
     } = req.body;
 
-    if (!userId || !channelId || !channelName || !promoText) {
+    const trimmedPromoText = String(promoText || '').trim();
+    if (!userId || !channelId || !channelName || !trimmedPromoText) {
       res.status(400).json({ error: 'Заполните обязательные поля канала и описания' });
       return;
     }
 
-    if (promoText.length > 200) {
+    if (trimmedPromoText.length > 200) {
       res.status(400).json({ error: 'Описание канала не должно превышать 200 символов' });
       return;
     }
@@ -1862,24 +1937,29 @@ promoRouter.post('/promo-selections/:id/join', async (req: Request, res: Respons
     let cats = [];
     try { cats = JSON.parse(selection.categories || '[]'); } catch (e) {}
 
-    // Check duplicate
-    const dStmt = db.prepare("SELECT id, status FROM promo_selection_channels WHERE selection_id = ? AND channel_id = ? LIMIT 1");
+    // Check duplicate (allow confirming/rejoining when status is 'invited', 'left', or 'declined')
+    let existingRecord: any = null;
+    const dStmt = db.prepare("SELECT * FROM promo_selection_channels WHERE selection_id = ? AND channel_id = ? LIMIT 1");
     dStmt.bind([selId, channelId]);
     if (dStmt.step()) {
-      const existing: any = dStmt.getAsObject();
-      dStmt.free();
-      if (existing.status !== 'left') {
-        res.status(400).json({ error: 'Этот канал уже добавлен в подборку' });
-        return;
-      }
+      existingRecord = dStmt.getAsObject();
     }
     dStmt.free();
 
+    if (existingRecord && existingRecord.status !== 'left' && existingRecord.status !== 'invited' && existingRecord.status !== 'declined') {
+      res.status(400).json({ error: 'Этот канал уже участвует в подборке' });
+      return;
+    }
+
     // Check capacity limit (max 50 due to Telegram Rich 50-attachment limit)
-    const cntStmt = db.prepare(
-      "SELECT COUNT(*) AS cnt FROM promo_selection_channels WHERE selection_id = ? AND status NOT IN ('left', 'declined')"
-    );
-    cntStmt.bind([selId]);
+    const cntStmt = existingRecord
+      ? db.prepare("SELECT COUNT(*) AS cnt FROM promo_selection_channels WHERE selection_id = ? AND id != ? AND status NOT IN ('left', 'declined')")
+      : db.prepare("SELECT COUNT(*) AS cnt FROM promo_selection_channels WHERE selection_id = ? AND status NOT IN ('left', 'declined')");
+    if (existingRecord) {
+      cntStmt.bind([selId, existingRecord.id]);
+    } else {
+      cntStmt.bind([selId]);
+    }
     let currentParticipantsCount = 0;
     if (cntStmt.step()) {
       const cntRow: any = cntStmt.getAsObject();
@@ -1896,7 +1976,7 @@ promoRouter.post('/promo-selections/:id/join', async (req: Request, res: Respons
 
     // 1. Moderate text via Function 763 (excluding spam/links, checking profanity, legality, category suitability)
     const modResult = await moderateSelectionTextWith763({
-      text: promoText,
+      text: trimmedPromoText,
       categories: cats,
       channelName,
       channelUsername,
@@ -1931,70 +2011,106 @@ promoRouter.post('/promo-selections/:id/join', async (req: Request, res: Respons
     }
 
     const botCheck = await verifyBotInChannel(channelUsername || channelName);
-    const chanRecordId = `selchan_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const chanRecordId = existingRecord ? existingRecord.id : `selchan_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const subs = Number(subscribersCount) || botCheck.subscribersCount || 0;
 
-    let finalAvatarUrl = channelAvatarUrl || botCheck.photoUrl || '';
+    let finalAvatarUrl = channelAvatarUrl || existingRecord?.channel_avatar_url || botCheck.photoUrl || '';
     try {
       const { ensureChannelAvatarInGallery } = await import('./channelAvatarService');
       const uploaded = await ensureChannelAvatarInGallery(channelUsername || channelName, finalAvatarUrl);
       if (uploaded) finalAvatarUrl = uploaded;
     } catch (e) {}
 
-    db.run(`
-      INSERT INTO promo_selection_channels (
-        id, selection_id, user_id, channel_id, channel_name, channel_username,
-        channel_avatar_url, promo_text, promo_images, subscribers_initial,
-        subscribers_final, views_count, likes_count, reposts_count, comments_count,
-        moderation_status, status, bot_verified, joined_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, 0, 0, 0, 0,
-        'approved', 'active', ?, ?
-      )
-    `, [
-      chanRecordId,
-      selId,
-      userId,
-      channelId,
-      channelName,
-      channelUsername || '',
-      finalAvatarUrl,
-      promoText.trim(),
-      promoImages ? JSON.stringify(promoImages) : '',
-      subs,
-      subs,
-      botCheck.ok ? 1 : 0,
-      new Date().toISOString()
-    ]);
+    const nowIso = new Date().toISOString();
+    if (existingRecord) {
+      db.run(`
+        UPDATE promo_selection_channels
+        SET user_id = ?, channel_name = ?, channel_username = ?, channel_avatar_url = ?,
+            promo_text = ?, promo_images = ?, subscribers_initial = ?, subscribers_final = ?,
+            moderation_status = 'approved', status = 'active', reject_reason = NULL,
+            bot_verified = ?, joined_at = ?, post_published = 0
+        WHERE id = ?
+      `, [
+        userId,
+        channelName,
+        channelUsername || '',
+        finalAvatarUrl,
+        trimmedPromoText,
+        promoImages ? JSON.stringify(promoImages) : (finalAvatarUrl ? JSON.stringify([finalAvatarUrl]) : ''),
+        subs,
+        subs,
+        botCheck.ok ? 1 : 0,
+        nowIso,
+        chanRecordId
+      ]);
+    } else {
+      db.run(`
+        INSERT INTO promo_selection_channels (
+          id, selection_id, user_id, channel_id, channel_name, channel_username,
+          channel_avatar_url, promo_text, promo_images, subscribers_initial,
+          subscribers_final, views_count, likes_count, reposts_count, comments_count,
+          moderation_status, status, bot_verified, joined_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, 0, 0, 0, 0,
+          'approved', 'active', ?, ?
+        )
+      `, [
+        chanRecordId,
+        selId,
+        userId,
+        channelId,
+        channelName,
+        channelUsername || '',
+        finalAvatarUrl,
+        trimmedPromoText,
+        promoImages ? JSON.stringify(promoImages) : '',
+        subs,
+        subs,
+        botCheck.ok ? 1 : 0,
+        nowIso
+      ]);
+    }
 
-    // Update promo_selections post_text in PostgreSQL ProTalk database so the full post reflects the new participant
+    // Update promo_selections post_text in PostgreSQL so the full post reflects the participant without duplicating existing blocks
     try {
-      const sStmt = db.prepare("SELECT post_text FROM promo_selections WHERE id = ? LIMIT 1");
-      sStmt.bind([selId]);
-      if (sStmt.step()) {
-        const curPost = String(sStmt.getAsObject().post_text || '');
-        const chDirectLink = channelUsername ? `https://t.me/${channelUsername.replace(/^@/, '')}` : 'https://t.me/';
+      const psStmt = db.prepare("SELECT post_text FROM promo_selections WHERE id = ? LIMIT 1");
+      psStmt.bind([selId]);
+      if (psStmt.step()) {
+        const curPost = String(psStmt.getAsObject().post_text || '');
+        const cleanChUser = channelUsername ? String(channelUsername).replace(/^@/, '') : '';
+        const chDirectLink = cleanChUser ? `https://t.me/${cleanChUser}` : 'https://t.me/';
         const topLines = [
           `## [${channelName.trim()}](${chDirectLink})`,
           finalAvatarUrl ? `![](${finalAvatarUrl})` : '',
-          promoText.trim() ? `<i>${promoText.trim()}</i>` : ''
+          trimmedPromoText ? `<i>${trimmedPromoText}</i>` : ''
         ].filter(Boolean);
         const subLine = `<tg-button-row align="center">\n  <tg-button type="url" style="primary" url="${chDirectLink}">✅ Подписаться на канал</tg-button>\n</tg-button-row>`;
         const newBlock = `${topLines.join('\n')}\n\n\n${subLine}`;
-        
-        const updatedPost = curPost && curPost.trim()
-          ? `${curPost.trim()}\n\n${newBlock}`
-          : newBlock;
+
+        const escName = channelName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escLink = chDirectLink.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const blockPattern = cleanChUser
+          ? new RegExp(`##\\s*\\[[^\\]]+\\]\\(${escLink}\\)[\\s\\S]*?<\\/tg-button-row>`, 'i')
+          : new RegExp(`##\\s*\\[${escName}\\]\\([^)]*\\)[\\s\\S]*?<\\/tg-button-row>`, 'i');
+
+        let updatedPost = '';
+        if (curPost && blockPattern.test(curPost)) {
+          updatedPost = curPost.replace(blockPattern, newBlock);
+        } else {
+          updatedPost = curPost && curPost.trim()
+            ? `${curPost.trim()}\n\n${newBlock}`
+            : newBlock;
+        }
 
         db.run("UPDATE promo_selections SET post_text = ?, updated_at = ? WHERE id = ?", [
           updatedPost,
-          new Date().toISOString(),
+          nowIso,
           selId
         ]);
       }
-      sStmt.free();
+      psStmt.free();
     } catch (postUpErr) {
       console.warn('[Selection Join] post_text update warning:', postUpErr);
     }
@@ -2120,6 +2236,26 @@ promoRouter.put('/promo-selections/:id/channels/:chanId', async (req: Request, r
     }
     const curChannel: any = cStmt.getAsObject();
     cStmt.free();
+
+    const actorUid = String(userId || (req.headers['x-user-id'] as string) || '').trim();
+    if (actorUid && curChannel.user_id) {
+      let isChannelOwner = actorUid === String(curChannel.user_id);
+      if (!isChannelOwner) {
+        try {
+          const uStmt = db.prepare("SELECT id, telegram_id FROM users WHERE id = ? OR CAST(telegram_id AS TEXT) = ? LIMIT 1");
+          uStmt.bind([actorUid, actorUid]);
+          if (uStmt.step()) {
+            const uObj: any = uStmt.getAsObject();
+            isChannelOwner = String(uObj.id || '') === String(curChannel.user_id) || String(uObj.telegram_id || '') === String(curChannel.user_id);
+          }
+          uStmt.free();
+        } catch {}
+      }
+      if (!isChannelOwner) {
+        res.status(403).json({ error: 'Редактировать канал в подборке может только владелец этого канала' });
+        return;
+      }
+    }
 
     const sStmt = db.prepare("SELECT categories FROM promo_selections WHERE id = ? LIMIT 1");
     sStmt.bind([selId]);

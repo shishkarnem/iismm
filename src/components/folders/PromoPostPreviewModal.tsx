@@ -80,20 +80,50 @@ export const PromoPostPreviewModal: React.FC<PromoPostPreviewModalProps> = ({
     : item.image_url || '';
 
   const normalizedImageUrl = normalizeProTalkMediaUrl(rawImageUrl) || rawImageUrl;
-  const showCoverImage = Boolean(normalizedImageUrl) && !isMediaAlreadyEmbedded(rawText, normalizedImageUrl);
+  const isImageEmbeddedInText = Boolean(normalizedImageUrl) && isMediaAlreadyEmbedded(rawText, normalizedImageUrl);
 
   const attachmentType = isFolder
     ? (activeTab === 'main' ? item.attachment_type : item.repeat_attachment_type) || 'none'
     : 'none';
-  const attachmentUrls = isFolder
+  const rawAttachmentUrls = isFolder
     ? parseUrlArray(activeTab === 'main' ? item.attachment_urls : item.repeat_attachment_urls)
     : [];
 
+  const isSameMediaUrl = (a: string, b: string) => {
+    if (!a || !b) return false;
+    const na = normalizeProTalkMediaUrl(a) || a;
+    const nb = normalizeProTalkMediaUrl(b) || b;
+    if (na === nb) return true;
+    const fa = na.split('/').pop()?.split('?')[0];
+    const fb = nb.split('/').pop()?.split('?')[0];
+    return Boolean(fa && fb && fa.length > 8 && fa === fb);
+  };
+
+  const filteredAttachmentUrls = rawAttachmentUrls.filter((u) => !isMediaAlreadyEmbedded(rawText, u));
+  const albumIncludesCover =
+    attachmentType === 'album' &&
+    Boolean(normalizedImageUrl) &&
+    filteredAttachmentUrls.some((u) => isSameMediaUrl(u, normalizedImageUrl));
+
+  const showCoverImage =
+    Boolean(normalizedImageUrl) && !isImageEmbeddedInText && !albumIncludesCover;
+
+  const extraAttachmentUrls = showCoverImage
+    ? filteredAttachmentUrls.filter((u) => !isSameMediaUrl(u, normalizedImageUrl))
+    : filteredAttachmentUrls;
+
+  const resolvedAttachmentList =
+    extraAttachmentUrls.length > 0
+      ? extraAttachmentUrls
+      : !showCoverImage && attachmentType !== 'photo' && normalizedImageUrl && !isImageEmbeddedInText
+      ? [normalizedImageUrl]
+      : [];
+
   const showSeparateAttachment =
     isFolder &&
-    attachmentType &&
+    Boolean(attachmentType) &&
     attachmentType !== 'none' &&
-    (attachmentUrls.length > 0 || (attachmentType !== 'photo' && Boolean(normalizedImageUrl)));
+    resolvedAttachmentList.length > 0;
 
   const buttonRows = parseButtonRows(
     isFolder
@@ -109,12 +139,43 @@ export const PromoPostPreviewModal: React.FC<PromoPostPreviewModalProps> = ({
     ? item.title || 'Папка каналов'
     : item.header_title || item.title || 'Подборка каналов';
 
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const hasTitleInText =
+    Boolean(titleText) &&
+    rawText.trim().length > 0 &&
+    new RegExp(`(^|\\n)\\s*(?:#+\\s*)?${escapeRegExp(titleText.trim())}\\s*(\\n|$)`, 'i').test(rawText);
+
+  const normalizedSub = String(item.header_subtitle || '').trim();
   const showSelectionSubtitle =
     !isFolder &&
-    Boolean(item.header_subtitle) &&
-    !rawText.includes(String(item.header_subtitle).trim());
+    Boolean(normalizedSub) &&
+    !rawText.includes(normalizedSub);
 
   const rulesText = isFolder ? item.rules_instruction : item.rules;
+  const showRulesCard =
+    Boolean(rulesText) &&
+    !rawText.includes(String(rulesText).trim());
+
+  // For Rich selection posts that embed both cover ![](url) and a reused channel ![](url) with the exact same URL,
+  // keep the first cover occurrence in displayRawText and strip subsequent duplicate identical cover lines.
+  const displayRawText =
+    !rawText.trim() || !normalizedImageUrl || isFolder
+      ? rawText
+      : (() => {
+          let coverSeenCount = 0;
+          return rawText
+            .split('\n')
+            .filter((line) => {
+              const m = line.trim().match(/^!\[[^\]]*\]\(([^)]+)\)$/);
+              if (m && isSameMediaUrl(m[1], normalizedImageUrl)) {
+                coverSeenCount += 1;
+                return coverSeenCount === 1;
+              }
+              return true;
+            })
+            .join('\n');
+        })();
 
   return (
     <div
@@ -194,9 +255,11 @@ export const PromoPostPreviewModal: React.FC<PromoPostPreviewModalProps> = ({
                 )}
               </div>
 
-              <h1 className="text-base sm:text-lg font-black text-slate-950 leading-snug break-words">
-                {titleText}
-              </h1>
+              {!hasTitleInText && (
+                <h1 className="text-base sm:text-lg font-black text-slate-950 leading-snug break-words">
+                  {titleText}
+                </h1>
+              )}
 
               {showSelectionSubtitle && (
                 <div className="text-[14px] font-medium text-slate-700 leading-relaxed">
@@ -221,7 +284,7 @@ export const PromoPostPreviewModal: React.FC<PromoPostPreviewModalProps> = ({
               <div className="space-y-2">
                 {renderMediaAttachment(
                   attachmentType,
-                  attachmentUrls.length > 0 ? attachmentUrls : normalizedImageUrl ? [normalizedImageUrl] : [],
+                  resolvedAttachmentList,
                   false
                 )}
               </div>
@@ -229,11 +292,11 @@ export const PromoPostPreviewModal: React.FC<PromoPostPreviewModalProps> = ({
 
             {/* Main Formatted Body */}
             <div className="text-[14px] text-slate-900 leading-relaxed p-3 sm:p-4 rounded-2xl bg-gradient-to-br from-sky-50/60 via-pink-50/50 to-orange-50/60 border border-pink-100 font-sans min-w-0 break-words">
-              {rawText.trim() ? (
+              {displayRawText.trim() ? (
                 activeFormat === 'rich' ? (
-                  <RichPreviewRenderer content={rawText} isRich={true} hideEmptyPlaceholder />
+                  <RichPreviewRenderer content={displayRawText} isRich={true} hideEmptyPlaceholder />
                 ) : (
-                  <MarkdownRenderer content={rawText} format="v2" />
+                  <MarkdownRenderer content={displayRawText} format="v2" />
                 )
               ) : !isFolder && activeChannels.length > 0 ? (
                 <div className="space-y-4">
@@ -323,7 +386,7 @@ export const PromoPostPreviewModal: React.FC<PromoPostPreviewModalProps> = ({
             )}
 
             {/* Rules / Conditions */}
-            {rulesText && (
+            {showRulesCard && (
               <div className="p-3 rounded-2xl bg-orange-50/90 border border-orange-200 text-[14px] text-slate-800 break-words">
                 <span className="font-bold text-slate-950 block mb-0.5">
                   {isFolder ? 'Правила размещения:' : 'Условия взаимного размещения:'}

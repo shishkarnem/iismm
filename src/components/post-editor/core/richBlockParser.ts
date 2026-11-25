@@ -27,6 +27,17 @@ export type ParsedRichBlock =
   | { type: 'anchor'; name: string }
   | { type: 'paragraph'; text: string };
 
+function detectMediaKind(url: string): 'image' | 'video' | 'audio' | 'voice' | 'document' {
+  const lower = String(url || '').toLowerCase();
+  if (/\.(mp4|webm|mov)(\?.*)?$/.test(lower) || lower.startsWith('tg://video')) return 'video';
+  if (/\.ogg(\?.*)?$/.test(lower) || lower.startsWith('tg://voice')) return 'voice';
+  if (/\.(mp3|wav|m4a)(\?.*)?$/.test(lower) || lower.startsWith('tg://audio')) return 'audio';
+  if (/\.(pdf|docx?|xlsx?|csv|zip|rar|txt)(\?.*)?$/.test(lower) || lower.startsWith('tg://document')) {
+    return 'document';
+  }
+  return 'image';
+}
+
 function makeHeadingSlug(raw: string): string {
   return raw
     .replace(/[*_~`[\]()]/g, '')
@@ -373,23 +384,36 @@ export function parseRichBlocks(rawText: string): ParsedRichBlock[] {
       continue;
     }
 
-    // Standalone Markdown media ![caption](url)
+    // Standalone or inline Markdown media ![caption](url)
     const mediaMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (mediaMatch) {
       const caption = mediaMatch[1] || '';
       const url = mediaMatch[2].trim();
-      const lower = url.toLowerCase();
-      const mediaKind: 'image' | 'video' | 'audio' | 'voice' | 'document' =
-        /\.(mp4|webm|mov)(\?.*)?$/.test(lower) || lower.startsWith('tg://video')
-          ? 'video'
-          : /\.ogg(\?.*)?$/.test(lower) || lower.startsWith('tg://voice')
-          ? 'voice'
-          : /\.(mp3|wav|m4a)(\?.*)?$/.test(lower) || lower.startsWith('tg://audio')
-          ? 'audio'
-          : /\.(pdf|docx?|xlsx?|csv|zip|rar|txt)(\?.*)?$/.test(lower) || lower.startsWith('tg://document')
-          ? 'document'
-          : 'image';
-      blocks.push({ type: 'media', mediaKind, caption, url });
+      blocks.push({ type: 'media', mediaKind: detectMediaKind(url), caption, url });
+      i++;
+      continue;
+    }
+
+    if (/!\[[^\]]*\]\(([^)]+)\)/.test(trimmed)) {
+      const inlineMediaRe = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      let cursor = 0;
+      let im: RegExpExecArray | null;
+      while ((im = inlineMediaRe.exec(line)) !== null) {
+        const beforeText = line.slice(cursor, im.index).trim();
+        if (beforeText) {
+          blocks.push({ type: 'paragraph', text: beforeText });
+        }
+        const caption = (im[1] || '').trim();
+        const url = (im[2] || '').trim();
+        if (url) {
+          blocks.push({ type: 'media', mediaKind: detectMediaKind(url), caption, url });
+        }
+        cursor = im.index + im[0].length;
+      }
+      const afterText = line.slice(cursor).trim();
+      if (afterText) {
+        blocks.push({ type: 'paragraph', text: afterText });
+      }
       i++;
       continue;
     }
@@ -512,7 +536,7 @@ export function parseRichBlocks(rawText: string): ParsedRichBlock[] {
       !/^(#{1,4})\s+/.test(lines[i]) &&
       !/^(?:---|===|\*\*\*)$/.test(lines[i].trim()) &&
       !/^<\/?(?:tg-)?(?:collage|slideshow|carousel|details|aside|blockquote|button-row|document|figure|video|audio|table)\b/i.test(lines[i].trim()) &&
-      !/^!\[([^\]]*)\]\(([^)]+)\)$/.test(lines[i].trim()) &&
+      !/!\[([^\]]*)\]\(([^)]+)\)/.test(lines[i].trim()) &&
       !(lines[i].trim().startsWith('|') && i + 1 < lines.length && isTableDelimiterRow(lines[i + 1])) &&
       !checklistRegex.test(lines[i].trim()) &&
       !/^(?:•|-|\*)\s+/.test(lines[i].trim()) &&

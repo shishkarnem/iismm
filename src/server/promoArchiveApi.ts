@@ -686,6 +686,82 @@ promoArchiveRouter.post('/promo-selections/:id/confirm-invitation', async (req: 
   }
 });
 
+// 6b. Decline Invitation in Folder
+promoArchiveRouter.post('/promo-folders/:id/decline-invitation', async (req: Request, res: Response) => {
+  try {
+    const db = await getPgDB();
+    const folderId = req.params.id;
+    const actorUserId = req.body?.userId || (req.headers['x-user-id'] as string) || '';
+    const { participantId, channelId } = req.body || {};
+
+    let pRecord: any = null;
+    if (participantId) {
+      const pStmt = db.prepare("SELECT * FROM promo_folder_participants WHERE id = ? AND folder_id = ? LIMIT 1");
+      pStmt.bind([participantId, folderId]);
+      if (pStmt.step()) pRecord = pStmt.getAsObject();
+      pStmt.free();
+    } else if (actorUserId && channelId) {
+      const pStmt = db.prepare("SELECT * FROM promo_folder_participants WHERE user_id = ? AND channel_id = ? AND folder_id = ? LIMIT 1");
+      pStmt.bind([actorUserId, channelId, folderId]);
+      if (pStmt.step()) pRecord = pStmt.getAsObject();
+      pStmt.free();
+    } else if (actorUserId) {
+      const pStmt = db.prepare("SELECT * FROM promo_folder_participants WHERE user_id = ? AND folder_id = ? LIMIT 1");
+      pStmt.bind([actorUserId, folderId]);
+      if (pStmt.step()) pRecord = pStmt.getAsObject();
+      pStmt.free();
+    }
+
+    if (!pRecord) {
+      return res.status(404).json({ error: 'Приглашение участника не найдено' });
+    }
+
+    db.run("UPDATE promo_folder_participants SET status = 'declined' WHERE id = ?", [pRecord.id]);
+    savePgDB();
+    res.json({ success: true, message: 'Приглашение в папку отклонено.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6c. Decline Invitation in Selection
+promoArchiveRouter.post('/promo-selections/:id/decline-invitation', async (req: Request, res: Response) => {
+  try {
+    const db = await getPgDB();
+    const selId = req.params.id;
+    const actorUserId = req.body?.userId || (req.headers['x-user-id'] as string) || '';
+    const { chanId, channelId } = req.body || {};
+
+    let chanRecord: any = null;
+    if (chanId) {
+      const cStmt = db.prepare("SELECT * FROM promo_selection_channels WHERE id = ? AND selection_id = ? LIMIT 1");
+      cStmt.bind([chanId, selId]);
+      if (cStmt.step()) chanRecord = cStmt.getAsObject();
+      cStmt.free();
+    } else if (actorUserId && channelId) {
+      const cStmt = db.prepare("SELECT * FROM promo_selection_channels WHERE user_id = ? AND channel_id = ? AND selection_id = ? LIMIT 1");
+      cStmt.bind([actorUserId, channelId, selId]);
+      if (cStmt.step()) chanRecord = cStmt.getAsObject();
+      cStmt.free();
+    } else if (actorUserId) {
+      const cStmt = db.prepare("SELECT * FROM promo_selection_channels WHERE user_id = ? AND selection_id = ? LIMIT 1");
+      cStmt.bind([actorUserId, selId]);
+      if (cStmt.step()) chanRecord = cStmt.getAsObject();
+      cStmt.free();
+    }
+
+    if (!chanRecord) {
+      return res.status(404).json({ error: 'Приглашение канала не найдено' });
+    }
+
+    db.run("UPDATE promo_selection_channels SET status = 'declined' WHERE id = ?", [chanRecord.id]);
+    savePgDB();
+    res.json({ success: true, message: 'Приглашение в подборку отклонено.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 7. Get pending invitations for user
 promoArchiveRouter.get('/promo-invitations', async (req: Request, res: Response) => {
   try {
@@ -695,12 +771,12 @@ promoArchiveRouter.get('/promo-invitations', async (req: Request, res: Response)
       return res.json({ folders: [], selections: [] });
     }
 
-    // Pending folder invitations
+    // Pending folder invitations (exclude archived parents)
     const fStmt = db.prepare(`
       SELECT f.id as folder_id, f.title, f.scheduled_at, f.author_name, p.id as participant_id, p.channel_name, p.channel_id
       FROM promo_folder_participants p
       JOIN promo_folders f ON p.folder_id = f.id
-      WHERE p.user_id = ? AND p.status = 'invited'
+      WHERE p.user_id = ? AND p.status = 'invited' AND COALESCE(f.status, 'recruiting') != 'archived'
     `);
     fStmt.bind([userId]);
     const folders: any[] = [];
@@ -709,12 +785,12 @@ promoArchiveRouter.get('/promo-invitations', async (req: Request, res: Response)
     }
     fStmt.free();
 
-    // Pending selection invitations
+    // Pending selection invitations (exclude archived parents)
     const sStmt = db.prepare(`
       SELECT s.id as selection_id, s.title, s.scheduled_at, s.author_name, c.id as chan_id, c.channel_name, c.channel_id
       FROM promo_selection_channels c
       JOIN promo_selections s ON c.selection_id = s.id
-      WHERE c.user_id = ? AND c.status = 'invited'
+      WHERE c.user_id = ? AND c.status = 'invited' AND COALESCE(s.status, 'recruiting') != 'archived'
     `);
     sStmt.bind([userId]);
     const selections: any[] = [];

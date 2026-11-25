@@ -7,35 +7,42 @@ interface SelectionChannelRowProps {
   channel: any;
   selectionScheduledAt: string;
   isMyChannel: boolean;
-  canEdit: boolean;
+  canEditContent: boolean;
+  canEditTime: boolean;
+  canDelete: boolean;
   onOpenDetail: () => void;
   onOpenCustomTime: () => void;
   onOpenEdit: () => void;
   onOpenDelete: () => void;
 }
 
-function formatCompactMskDate(isoOrDate?: string): string {
+function formatFullCompactMskDate(isoOrDate?: string): string {
   if (!isoOrDate) return 'По расписанию';
   const info = formatMskDateDisplay(isoOrDate);
   const parsed = new Date(isoOrDate);
   if (isNaN(parsed.getTime())) {
     return info.fullStr || 'По расписанию';
   }
-  const mskStr = parsed.toLocaleString('ru-RU', {
+  const datePart = parsed.toLocaleDateString('ru-RU', {
     timeZone: 'Europe/Moscow',
     day: '2-digit',
     month: '2-digit',
+  });
+  const timePart = parsed.toLocaleTimeString('ru-RU', {
+    timeZone: 'Europe/Moscow',
     hour: '2-digit',
     minute: '2-digit',
   });
-  return `${mskStr} Мск`;
+  return `${datePart}, ${timePart} (МСК)`;
 }
 
 export const SelectionChannelRow: React.FC<SelectionChannelRowProps> = ({
   channel,
   selectionScheduledAt,
   isMyChannel,
-  canEdit,
+  canEditContent,
+  canEditTime,
+  canDelete,
   onOpenDetail,
   onOpenCustomTime,
   onOpenEdit,
@@ -45,127 +52,138 @@ export const SelectionChannelRow: React.FC<SelectionChannelRowProps> = ({
   const subscribersCount = Number(channel.subscribers_initial || channel.subscribers_count || 0);
   const isPublishedSuccess = channel.post_published === 1 && !channel.reject_reason;
   const isPublishedError = Boolean(channel.reject_reason);
+  const hasCustomTime = Boolean(channel.custom_publish_time);
   const scheduledSource = channel.custom_publish_time || selectionScheduledAt;
   const fullMskDate = formatMskDateDisplay(scheduledSource).fullStr;
-  const compactMskDate = formatCompactMskDate(scheduledSource);
+  const compactMskDate = formatFullCompactMskDate(scheduledSource);
+
+  const showTimeButton = canEditTime && channel.post_published !== 1;
+  const showActionRow = showTimeButton || canEditContent;
 
   return (
-    <div className="p-2.5 rounded-2xl bg-white/85 border border-pink-200/80 shadow-2xs space-y-1.5 min-w-0 transition-colors hover:bg-white">
-      {/* Line 1: Avatar + Channel name / @username / subscribers + compact badges */}
-      <div className="flex items-center justify-between gap-2 min-w-0">
+    <div className="p-3 rounded-2xl bg-gradient-to-r from-sky-50/85 via-pink-50/85 via-orange-50/85 via-pink-50/85 to-sky-50/85 backdrop-blur-sm border border-pink-200/80 shadow-2xs space-y-2 min-w-0 transition-colors hover:border-pink-300">
+      {/* Row 1: Channel identity + Delete icon neatly in top-right corner */}
+      <div className="flex items-start justify-between gap-2 min-w-0">
         <button
           type="button"
           onClick={onOpenDetail}
-          className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer group"
+          className="flex items-start gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
           title={channel.promo_text ? `${channel.channel_name} — ${channel.promo_text}` : channel.channel_name}
         >
           {channel.channel_avatar_url ? (
             <CachedMediaImage
               src={channel.channel_avatar_url}
               alt={channel.channel_name || 'Канал'}
-              className="w-9 h-9 rounded-xl object-cover shrink-0 border border-pink-200"
+              className="w-10 h-10 rounded-xl object-cover shrink-0 border border-pink-200"
             />
           ) : (
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-100 via-pink-100 to-orange-100 text-pink-700 flex items-center justify-center font-bold text-[14px] shrink-0 border border-pink-200">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-100 via-pink-100 to-orange-100 text-pink-700 flex items-center justify-center font-bold text-[14px] shrink-0 border border-pink-200">
               {(channel.channel_name || 'Кн').slice(0, 2)}
             </div>
           )}
 
-          <div className="min-w-0 flex-1">
-            <div className="font-bold text-[14px] text-slate-900 group-hover:text-pink-700 truncate leading-tight">
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <div className="font-bold text-[14px] text-slate-900 group-hover:text-pink-700 break-words leading-snug">
               {channel.channel_name}
             </div>
-            <div className="flex items-center gap-1.5 min-w-0 text-[14px] leading-tight mt-0.5">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[14px] leading-snug">
               {cleanUsername && (
-                <span className="text-pink-600 font-semibold truncate">
+                <span className="text-pink-600 font-semibold break-all">
                   @{cleanUsername}
                 </span>
               )}
-              <span className="text-slate-600 shrink-0">
+              <span className="text-slate-700 shrink-0">
                 {subscribersCount} подп.
               </span>
             </div>
           </div>
         </button>
 
-        <div className="flex items-center gap-1 shrink-0">
-          {isMyChannel && (
-            <span className="px-1.5 py-0.5 rounded-lg bg-amber-100/90 text-amber-900 border border-amber-200 text-[14px] font-bold leading-none">
-              Ваш
-            </span>
-          )}
-          <span
-            className="px-1.5 py-0.5 rounded-lg bg-sky-100/80 text-sky-800 border border-sky-200 text-[14px] font-semibold leading-none"
-            title="Одобрен автоматически через нейромодерацию"
+        {canDelete && (
+          <button
+            type="button"
+            onClick={onOpenDelete}
+            className="w-8 h-8 shrink-0 rounded-xl bg-white/90 border border-rose-200 text-rose-600 hover:bg-rose-50 cursor-pointer shadow-2xs flex items-center justify-center"
+            title="Удалить канал из подборки"
+            aria-label="Удалить канал из подборки"
           >
-            Авто ✓
-          </span>
-        </div>
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
-      {/* Line 2: Schedule / Delivery Status + Compact Action Controls */}
-      <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-pink-100/80 min-w-0">
-        <div className="min-w-0 flex-1 text-[14px]">
+      {/* Row 2: Role / Custom-time badges + Full Publish Date & Time */}
+      <div className="pt-1.5 border-t border-pink-200/70 space-y-1.5 min-w-0">
+        {(isMyChannel || hasCustomTime) && (
+          <div className="flex flex-wrap items-center gap-1.5 text-[14px]">
+            {isMyChannel && (
+              <span className="px-2 py-0.5 rounded-lg bg-amber-100/90 text-amber-900 border border-amber-300 text-[14px] font-bold leading-snug">
+                Ваш канал
+              </span>
+            )}
+            {hasCustomTime && (
+              <span className="px-2 py-0.5 rounded-lg bg-sky-100/90 text-sky-900 border border-sky-300 text-[14px] font-semibold leading-snug">
+                Своё время
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="text-[14px] leading-snug min-w-0">
           {isPublishedError ? (
-            <span
-              className="inline-flex items-center gap-1 text-rose-700 font-bold max-w-full truncate"
+            <div
+              className="flex items-start gap-1.5 text-rose-700 font-bold break-words"
               title={channel.reject_reason}
             >
-              <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-              <span className="truncate">Ошибка: {channel.reject_reason}</span>
-            </span>
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>Ошибка: {channel.reject_reason}</span>
+            </div>
           ) : isPublishedSuccess ? (
-            <span className="inline-flex items-center gap-1 text-sky-800 font-bold">
-              <CheckCircle2 className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-              <span className="truncate">Отправлено</span>
-            </span>
+            <div className="flex items-center gap-1.5 text-sky-900 font-bold">
+              <CheckCircle2 className="w-4 h-4 text-sky-600 shrink-0" />
+              <span>Опубликовано</span>
+            </div>
           ) : (
-            <span
-              className="inline-flex items-center gap-1 text-orange-800 font-medium max-w-full truncate"
+            <div
+              className="flex items-center gap-1.5 text-slate-800 font-semibold tabular-nums flex-wrap"
               title={`Запланировано: ${fullMskDate}`}
             >
-              <Clock className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-              <span className="truncate">{compactMskDate}</span>
-            </span>
+              <Clock className="w-4 h-4 text-orange-600 shrink-0" />
+              <span>Выход: {compactMskDate}</span>
+            </div>
           )}
         </div>
 
-        {canEdit && (
-          <div className="flex items-center gap-1 shrink-0">
-            {channel.post_published !== 1 && (
+        {/* Row 3: Action buttons on one clean line (Время for owner/organizer, Ред. strictly for channel owner) */}
+        {showActionRow && (
+          <div className="flex items-center gap-1.5 pt-1">
+            {showTimeButton && (
               <button
                 type="button"
                 onClick={onOpenCustomTime}
-                className={`px-2 py-1 rounded-xl border text-[14px] font-bold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors ${
-                  channel.custom_publish_time
+                className={`flex-1 min-w-0 min-h-[38px] px-2.5 py-1.5 rounded-xl border text-[14px] font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer transition-colors ${
+                  hasCustomTime
                     ? 'bg-sky-100/90 border-sky-300 text-sky-900'
-                    : 'bg-white/90 border-sky-200 text-sky-800 hover:bg-sky-50'
+                    : 'bg-white/90 border-sky-200 text-sky-800 hover:bg-white'
                 }`}
-                title="Изменить индивидуальное время публикации (до 24ч вперед)"
+                title="Указать индивидуальное время выхода в течение суток (до 24ч вперёд)"
               >
-                <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                <span className="hidden sm:inline">{channel.custom_publish_time ? 'Смещено' : 'Время'}</span>
+                <Clock className="w-4 h-4 text-sky-600 shrink-0" />
+                <span className="truncate">{hasCustomTime ? 'Смещено' : 'Время'}</span>
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={onOpenEdit}
-              className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white font-bold text-[14px] flex items-center gap-1 shadow-2xs hover:opacity-95 transition-all cursor-pointer"
-              title="Редактировать описание и аватар канала"
-            >
-              <Edit3 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Ред.</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenDelete}
-              className="p-1.5 rounded-xl bg-white/90 border border-rose-200 text-rose-600 hover:bg-rose-50 text-[14px] cursor-pointer shadow-2xs"
-              title="Удалить канал из подборки"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {canEditContent && (
+              <button
+                type="button"
+                onClick={onOpenEdit}
+                className="flex-1 min-w-0 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white font-bold text-[14px] flex items-center justify-center gap-1.5 shadow-2xs hover:opacity-95 transition-all cursor-pointer"
+                title="Редактировать описание и аватар канала"
+              >
+                <Edit3 className="w-4 h-4 shrink-0" />
+                <span className="truncate">Ред.</span>
+              </button>
+            )}
           </div>
         )}
       </div>

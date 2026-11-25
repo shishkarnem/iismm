@@ -252,7 +252,7 @@ export default function FoldersArchiveView({
             return (
               <div
                 key={item.id}
-                className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-sky-100/70 via-pink-100/70 via-orange-100/70 via-pink-100/70 to-sky-100/70 backdrop-blur-md border border-pink-300/70 shadow-xs flex flex-col justify-between gap-3.5 min-w-0"
+                className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-sky-100/70 via-pink-100/70 via-orange-100/70 via-pink-100/70 to-sky-100/70 backdrop-blur-md border border-pink-300/70 shadow-xs flex flex-col justify-between gap-3.5 min-w-0 overflow-hidden"
               >
                 <div className="space-y-3 min-w-0">
                   {/* Top Bar: Badge & Type */}
@@ -435,7 +435,7 @@ export default function FoldersArchiveView({
                 </div>
 
                 {/* Actions: View, Reanimate, Delete */}
-                <div className="pt-3 border-t border-pink-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+                <div className="pt-3 border-t border-pink-200/80 flex flex-wrap items-center gap-1.5 w-full">
                   <button
                     type="button"
                     onClick={() => {
@@ -445,10 +445,11 @@ export default function FoldersArchiveView({
                         onPreviewSelection(item.rawItem);
                       }
                     }}
-                    className="w-full sm:w-auto px-3.5 py-2 rounded-2xl text-[14px] font-bold bg-white/90 border border-pink-200 text-slate-700 hover:bg-white transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                    className="w-10 h-10 shrink-0 rounded-xl bg-white/90 border border-pink-200 text-sky-600 hover:bg-white transition-all flex items-center justify-center cursor-pointer shadow-2xs"
+                    title="Просмотр публикации"
+                    aria-label="Просмотр"
                   >
-                    <Eye className="w-4 h-4 text-sky-600" />
-                    <span>Просмотр</span>
+                    <Eye className="w-4 h-4" />
                   </button>
 
                   <button
@@ -467,10 +468,11 @@ export default function FoldersArchiveView({
                         participantsCount: item.participantsCount
                       });
                     }}
-                    className="w-full sm:w-auto px-3.5 py-2 rounded-2xl text-[14px] font-bold bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white shadow-2xs hover:opacity-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 min-w-[130px] min-h-[40px] px-3 py-2 rounded-xl text-[14px] font-bold bg-gradient-to-r from-sky-500 via-pink-500 via-orange-500 to-sky-500 text-white shadow-2xs hover:opacity-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Реанимировать со всеми участниками"
                   >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Реанимировать со всеми</span>
+                    <RotateCcw className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Реанимировать</span>
                   </button>
 
                   {onDeleteItem && (!currentUserId || !item.authorId || currentUserId === item.authorId) && (
@@ -484,11 +486,11 @@ export default function FoldersArchiveView({
                           participantsCount: item.participantsCount
                         })
                       }
-                      className="w-full sm:w-auto px-3 py-2 rounded-2xl text-[14px] font-bold bg-white/90 border border-rose-300 text-rose-700 hover:bg-rose-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                      className="w-10 h-10 shrink-0 rounded-xl bg-white/90 border border-rose-300 text-rose-700 hover:bg-rose-50 transition-all flex items-center justify-center cursor-pointer shadow-2xs"
                       title={item.itemType === 'folder' ? 'Удалить папку' : 'Удалить подборку'}
+                      aria-label={item.itemType === 'folder' ? 'Удалить папку' : 'Удалить подборку'}
                     >
                       <Trash2 className="w-4 h-4" />
-                      <span className="sm:hidden">Удалить</span>
                     </button>
                   )}
                 </div>

@@ -3,6 +3,8 @@ import { Check, Copy, ExternalLink, Eye, EyeOff } from 'lucide-react';
 import { ExtractedUrlInfo } from '../core/editorTypesAndTemplates';
 import { RichButtonChip, parseTgButtonElement } from './RichButtonsAndMediaPreview';
 import { repairMalformedInlineHtmlTags } from '../../../utils/formatting/postTitleAndTagHelpers';
+import { CachedMediaImage } from '../../CachedMediaImage';
+import { normalizeProTalkMediaUrl } from '../../../constants/proTalkStorage';
 
 export const RenderMathPreview: React.FC<{ formula: string; block?: boolean }> = ({
   formula,
@@ -140,7 +142,7 @@ export function renderFormattedText(raw: string, isRich = true): React.ReactNode
   const prepared = repairMalformedInlineHtmlTags(unescaped);
 
   const safeTokenRegex =
-    /(```[\s\S]*?```|\|\|[\s\S]+?\|\||<tg-spoiler>[\s\S]+?<\/tg-spoiler>|\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`\n]+`|<tg-button\b[^>]*>[\s\S]*?<\/tg-button>|<a\s+[^>]*href=["'][^"']+["'][^>]*>[\s\S]*?<\/a>|(?<!\!)\[[^\]]+\]\([^)]+\)|\*\*[\s\S]+?\*\*|__[\s\S]+?__|~~[\s\S]+?~~|<sup>[\s\S]+?<\/sup>|<sub>[\s\S]+?<\/sub>|<b>[\s\S]+?<\/b>|<strong>[\s\S]+?<\/strong>|<i>[\s\S]+?<\/i>|<em>[\s\S]+?<\/em>|<u>[\s\S]+?<\/u>|<ins>[\s\S]+?<\/ins>|<s>[\s\S]+?<\/s>|<del>[\s\S]+?<\/del>|<strike>[\s\S]+?<\/strike>|<br\s*\/?>|\[\^[^\]]+\]|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_)|(?<!~)~[^~\n]+~(?!~))/gi;
+    /(```[\s\S]*?```|\|\|[\s\S]+?\|\||<tg-spoiler>[\s\S]+?<\/tg-spoiler>|\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`\n]+`|<tg-button\b[^>]*>[\s\S]*?<\/tg-button>|<a\s+[^>]*href=["'][^"']+["'][^>]*>[\s\S]*?<\/a>|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\*\*[\s\S]+?\*\*|__[\s\S]+?__|~~[\s\S]+?~~|<sup>[\s\S]+?<\/sup>|<sub>[\s\S]+?<\/sub>|<b>[\s\S]+?<\/b>|<strong>[\s\S]+?<\/strong>|<i>[\s\S]+?<\/i>|<em>[\s\S]+?<\/em>|<u>[\s\S]+?<\/u>|<ins>[\s\S]+?<\/ins>|<s>[\s\S]+?<\/s>|<del>[\s\S]+?<\/del>|<strike>[\s\S]+?<\/strike>|<br\s*\/?>|\[\^[^\]]+\]|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_)|(?<!~)~[^~\n]+~(?!~))/gi;
 
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
@@ -203,6 +205,22 @@ export function renderFormattedText(raw: string, isRich = true): React.ReactNode
           >
             {renderFormattedText(hm[2], isRich)}
           </a>
+        );
+      } else {
+        parts.push(tok);
+      }
+    } else if (tok.startsWith('![')) {
+      const im = tok.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      if (im) {
+        const imgUrl = normalizeProTalkMediaUrl(im[2].trim()) || im[2].trim();
+        parts.push(
+          <span key={k} className="block my-2 rounded-2xl overflow-hidden border border-pink-200/80 bg-white/80 p-1">
+            <CachedMediaImage
+              src={imgUrl}
+              alt={im[1] || 'Иллюстрация'}
+              className="w-auto max-w-full max-h-80 object-contain rounded-xl mx-auto"
+            />
+          </span>
         );
       } else {
         parts.push(tok);
